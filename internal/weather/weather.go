@@ -217,7 +217,7 @@ func (s *Service) FetchNow() {
 	desc, icon := DescribeWMO(parsed.Current.WeatherCode)
 	loc := cfg.LocationName
 	if loc == "" {
-		loc = "Počasí"
+		loc = "Weather"
 	}
 
 	var daily []DailyForecast
@@ -308,26 +308,62 @@ func (s *Service) FetchNow() {
 
 // DescribeWMO translates a WMO weather code into a Czech description and vector icon name.
 func DescribeWMO(code int) (desc string, icon string) {
+	return DescribeWMOLang(code, "cs")
+}
+
+// DescribeWMOLang translates a WMO weather code into a localized description ("en" or "cs") and vector icon name.
+func DescribeWMOLang(code int, lang string) (desc string, icon string) {
+	isCS := config.NormalizeLanguage(lang) == "cs"
 	switch {
 	case code == 0:
-		return "Jasno", "sun"
+		if isCS {
+			return "Jasno", "sun"
+		}
+		return "Clear", "sun"
 	case code == 1 || code == 2:
-		return "Polojasno", "sun"
+		if isCS {
+			return "Polojasno", "sun"
+		}
+		return "Partly cloudy", "sun"
 	case code == 3:
-		return "Zataženo", "fan"
+		if isCS {
+			return "Zataženo", "fan"
+		}
+		return "Overcast", "fan"
 	case code == 45 || code == 48:
-		return "Mlha", "fan"
+		if isCS {
+			return "Mlha", "fan"
+		}
+		return "Fog", "fan"
 	case code >= 51 && code <= 67:
-		return "Déšť", "drop"
+		if isCS {
+			return "Déšť", "drop"
+		}
+		return "Rain", "drop"
 	case code >= 71 && code <= 77:
-		return "Sněžení", "drop"
+		if isCS {
+			return "Sněžení", "drop"
+		}
+		return "Snow", "drop"
 	case code >= 80 && code <= 82:
-		return "Přeháňky", "drop"
+		if isCS {
+			return "Přeháňky", "drop"
+		}
+		return "Showers", "drop"
 	case code >= 85 && code <= 86:
-		return "Sněhové přeháňky", "drop"
+		if isCS {
+			return "Sněhové přeháňky", "drop"
+		}
+		return "Snow showers", "drop"
 	case code >= 95:
-		return "Bouřka", "bolt"
+		if isCS {
+			return "Bouřka", "bolt"
+		}
+		return "Thunderstorm", "bolt"
 	default:
-		return "Proměnlivo", "sun"
+		if isCS {
+			return "Proměnlivo", "sun"
+		}
+		return "Variable", "sun"
 	}
 }

@@ -15,25 +15,26 @@
 
 | Portrait Dashboard | Landscape Dark Mode (3 Columns) | Timer & Calendar Cards |
 | :---: | :---: | :---: |
-| ![Main Portrait Dashboard](docs/screenshots/main.png) | ![Landscape Dark Mode](docs/screenshots/landscape_dark.png) | ![Timer and Calendar](docs/screenshots/timer_calendar.png) |
+| ![Main Portrait Dashboard](docs/screenshots/en/main.png) | ![Landscape Dark Mode](docs/screenshots/en/landscape_dark.png) | ![Timer and Calendar](docs/screenshots/en/timer_calendar.png) |
 
 | 7-Day & 24h Weather Detail | iCal Events Detail | Landscape Standby Screensaver |
 | :---: | :---: | :---: |
-| ![Weather Detail Modal](docs/screenshots/weather_detail.png) | ![Calendar Detail Modal](docs/screenshots/calendar_detail.png) | ![Landscape Standby](docs/screenshots/standby_landscape.png) |
+| ![Weather Detail Modal](docs/screenshots/en/weather_detail.png) | ![Calendar Detail Modal](docs/screenshots/en/calendar_detail.png) | ![Landscape Standby](docs/screenshots/en/standby_landscape.png) |
 
 | Gauges & Sparkline Charts | Interactive Floorplan | PIN Lock Keypad |
 | :---: | :---: | :---: |
-| ![Gauges and Charts](docs/screenshots/charts.png) | ![Interactive Floorplan](docs/screenshots/floorplan.png) | ![PIN Keypad](docs/screenshots/pin.png) |
+| ![Gauges and Charts](docs/screenshots/en/charts.png) | ![Interactive Floorplan](docs/screenshots/en/floorplan.png) | ![PIN Keypad](docs/screenshots/en/pin.png) |
 
 ---
 
 ## Key Features
 
 - **Single Static Go Binary (`CGO_ENABLED=0`, `armhf`)** — No GTK, Qt, Python, or external libraries required. Draws directly onto the Kindle Awesome WM X11 framebuffer (`600×800` portrait or rotated `800×600` landscape) with crisp e-ink contrast, 2×2 ordered dithering, and periodic full-black/white flashing to eliminate ghosting.
+- **Full English & Czech (`en` / `cs`) Localization** — Both the Kindle e-ink display UI (status bar, modals, weather WMO codes, calendar dates, timers, standby, PIN lock, alerts) and the embedded Web Configurator (`:8080`) support English (`en`, default) and Czech (`cs`) via `device.language` or the live `EN | CZ` header switcher.
 - **Universal Multi-Broker MQTT Client** — Supports plain (`tcp://`, `mqtt://`) and TLS (`ssl://`, `mqtts://`, `wss://`, HiveMQ Cloud) with an embedded Mozilla root CA bundle, LWT (`<base_topic>/status`), automatic reconnection, JSONPath value extraction (`$.temperature`, `$.state`, `$.readings[0].val`), and optional **Home Assistant MQTT Discovery**.
 - **Built-in Apple HomeKit Bridge (HAP)** — Selectively expose switches (`lightbulb`, `switch`, `outlet`) and temperature sensors/gauges directly into the Apple Home app over Wi-Fi (`udp/5353` mDNS + `tcp/51827`), even without an external MQTT broker (`local/switch/<id>`).
 - **10 Widget Types & Architectural Floorplans** — `switch`, `button` (single command or multi-step `macro_actions` scenes, optional 2-tap confirmation), `stepper` (`−` / `+` with `command_template`), `sensor` (primary + secondary reading, value mapping, min/max alert thresholds, stale indicator), `gauge`, `chart` (history sparkline), `select`, `weather`, `timer`, and `calendar`, plus free-form `floorplan` pages with rooms, walls, doors, labels, and interactive device pins.
-- **Open-Meteo Weather & iCal (`.ics`) Calendar** — API-key-free weather card with Czech namedays and a tap-to-open modal featuring a 24-hour curve + 7-day forecast; iCal / Google Calendar / Apple iCloud (`webcal://`) feed parser with `FREQ=WEEKLY` & `FREQ=YEARLY` recurrences.
+- **Open-Meteo Weather & iCal (`.ics`) Calendar** — API-key-free weather card with automatic Czech namedays when `language: cs` and a tap-to-open modal featuring a 24-hour curve + 7-day forecast; iCal / Google Calendar / Apple iCloud (`webcal://`) feed parser with `FREQ=WEEKLY` & `FREQ=YEARLY` recurrences.
 - **Countdown Timers & Daily Schedules** — Tap presets (`5m / 15m / 30m`, `+5m`, cancel) to automatically switch devices or publish MQTT topics on expiry, plus recurring `HH:MM` weekday automation rules evaluated directly on the Kindle.
 - **Power, Night & Security Features** — Configurable backlight auto-dim timeout (`backlight_timeout_sec`), night brightness window (`night_mode_enabled`), standby clock & sensor summary screen (`standby_timeout_sec`), Light / Dark / Auto-Night e-ink themes (`theme_mode`), limit alerts that wake the display, and a 4–8 digit PIN child lock (`pin_code`).
 - **Built-in Web Visual Designer & Live Mirror (`:8080`)** — Drag-and-drop grid & floorplan builder, live clickable Kindle screen mirror (`/api/screen.png`), live MQTT topic inspector, schedule & HomeKit manager, and YAML editor accessible from any browser on your LAN.

@@ -33,7 +33,7 @@ mqtt:
 
 homekit:
   enabled: true
-  # 8-digit HomeKit pairing code entered in Apple Home (Domácnost)
+  # 8-digit HomeKit pairing code entered in Apple Home
   pin: "00102003"
   port: 51827
   store_dir: homekit-db
@@ -41,7 +41,7 @@ homekit:
 weather:
   enabled: true
   # Built-in Open-Meteo integration (no API key required)
-  location_name: Praha
+  location_name: Prague
   latitude: 50.0755
   longitude: 14.4378
 
@@ -65,6 +65,8 @@ schedules:
 
 device:
   title: KindleIOT
+  # UI language: en (English) | cs (Čeština)
+  language: en
   # Physical Kindle panel resolution
   width: 600
   height: 800
@@ -95,20 +97,20 @@ web:
 
 pages:
   - id: overview
-    title: Přehled
+    title: Overview
     type: grid
     columns: 2
     widgets:
       - id: living_temp
         type: sensor
-        label: Obývák
+        label: Living Room
         icon: thermometer
         state_topic: home/livingroom/sensor
         state_json_path: $.temperature
         unit: "°C"
         secondary_topic: home/livingroom/sensor
         secondary_json_path: $.humidity
-        secondary_unit: "% RV"
+        secondary_unit: "% RH"
         stale_seconds: 600
         show_in_standby: true
         alert_enabled: false
@@ -117,7 +119,7 @@ pages:
 
       - id: living_lamp
         type: switch
-        label: Stojací lampa
+        label: Floor Lamp
         subtitle: Apple Home
         icon: light
         # Local/virtual switch (empty command_topic + state_topic local/switch/<id>)
@@ -134,15 +136,15 @@ pages:
 
       - id: lamp_timer
         type: timer
-        label: Odpočet lampy
-        subtitle: Automatické vypnutí
+        label: Lamp Timer
+        subtitle: Auto turn-off
         target_widget_id: living_lamp
         target_state: OFF
         timer_presets: [5, 15, 30]
 
       - id: main_light
         type: switch
-        label: Hlavní světlo
+        label: Main Light
         subtitle: Zigbee2MQTT
         state_topic: zigbee2mqtt/living_light
         state_json_path: $.state
@@ -156,12 +158,12 @@ pages:
 
       - id: weather_card
         type: weather
-        label: Počasí
+        label: Weather
         span: 2
 
       - id: thermostat
         type: stepper
-        label: Termostat
+        label: Thermostat
         span: 2
         state_topic: home/thermostat/target
         command_topic: home/thermostat/target/set
@@ -174,33 +176,33 @@ pages:
 
       - id: mode_select
         type: select
-        label: Režim domu
+        label: Home Mode
         span: 2
         state_topic: home/mode/state
         command_topic: home/mode/set
         options:
-          - label: Doma
+          - label: Home
             payload: home
-          - label: Večer
+          - label: Evening
             payload: evening
-          - label: Noc
+          - label: Night
             payload: night
-          - label: Odchod
+          - label: Away
             payload: away
 
   - id: analytics
-    title: Data a scény
+    title: Data & Scenes
     type: grid
     columns: 2
     widgets:
       - id: family_cal
         type: calendar
-        label: Kalendář
+        label: Calendar
         span: 2
 
       - id: power_gauge
         type: gauge
-        label: Příkon domu
+        label: Home Power
         icon: bolt
         state_topic: home/power/watts
         min: 0
@@ -211,7 +213,7 @@ pages:
 
       - id: temp_chart
         type: chart
-        label: Vývoj teploty
+        label: Temperature Chart
         state_topic: home/livingroom/sensor
         state_json_path: $.temperature
         precision: 1
@@ -219,8 +221,8 @@ pages:
 
       - id: goodnight_macro
         type: button
-        label: Dobrou noc
-        subtitle: Vypne světla
+        label: Good Night
+        subtitle: Turn off lights
         span: 2
         confirm: true
         macro_actions:
@@ -230,20 +232,20 @@ pages:
             state: OFF
 
   - id: map
-    title: Půdorys
+    title: Floorplan
     type: floorplan
     floorplan:
       shapes:
         - id: room_living
           kind: room
-          label: Obývák
+          label: Living Room
           x: 60
           y: 80
           w: 480
           h: 460
         - id: room_hall
           kind: room
-          label: Chodba
+          label: Hallway
           x: 540
           y: 80
           w: 380
@@ -261,7 +263,7 @@ pages:
           widget:
             id: fp_living_temp
             type: sensor
-            label: Teplota
+            label: Temp
             state_topic: home/livingroom/sensor
             state_json_path: $.temperature
             unit: "°C"
@@ -271,7 +273,7 @@ pages:
           widget:
             id: fp_living_lamp
             type: switch
-            label: Lampa
+            label: Lamp
             state_topic: local/switch/living_lamp
             payload_on: "ON"
             payload_off: "OFF"

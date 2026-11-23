@@ -49,4 +49,10 @@ func TestWeatherServiceFetchNow(t *testing.T) {
 	if len(snap.Hourly) == 0 || snap.Hourly[len(snap.Hourly)-1].PrecipProb != 40 {
 		t.Fatalf("unexpected hourly forecast: %+v", snap.Hourly)
 	}
+	if enDesc, _ := DescribeWMOLang(61, "en"); enDesc != "Rain" {
+		t.Fatalf("expected English WMO description Rain, got %q", enDesc)
+	}
+	if csDesc, _ := DescribeWMOLang(95, "cs"); csDesc != "Bouřka" {
+		t.Fatalf("expected Czech WMO description Bouřka, got %q", csDesc)
+	}
 }

@@ -76,12 +76,12 @@ Switches using `state_topic: local/switch/<id>` with no `command_topic` persist 
 ```yaml
 weather:
   enabled: true
-  location_name: Praha
+  location_name: Prague
   latitude: 50.0755
   longitude: 14.4378
 ```
 
-Fetches current weather, 24-hour hourly temperatures/precipitation probabilities, and a 7-day daily forecast from Open-Meteo every 30 minutes (no API key needed). Czech calendar namedays (*svátky*) are resolved offline from an embedded table.
+Fetches current weather, 24-hour hourly temperatures/precipitation probabilities, and a 7-day daily forecast from Open-Meteo every 30 minutes (no API key needed). Czech calendar namedays (*svátky*) are resolved offline from an embedded table and shown automatically when `device.language: cs`.
 
 ---
 
@@ -105,7 +105,7 @@ calendar:
 ```yaml
 schedules:
   - id: morning_light
-    name: Ranní světlo
+    name: Morning Light
     enabled: true
     hour: 7               # 0..23
     minute: 30            # 0..59
@@ -127,6 +127,7 @@ Evaluated locally on the Kindle every 5 seconds with single-fire-per-minute dedu
 ```yaml
 device:
   title: KindleIOT
+  language: en                # en (English) | cs (Čeština)
   width: 600
   height: 800
   orientation: portrait       # portrait | landscape (800x600) | landscape_cw (800x600 rotated 180°)
@@ -146,6 +147,7 @@ device:
   full_refresh_every: 20      # Full B/W e-ink flash every N renders
 ```
 
+- `language` (`en` default, or `cs`) sets the language for both the Kindle e-ink UI and the default Web Configurator interface (also switchable live via the `EN | CZ` header toggle).
 - When `theme_mode: auto_night`, the UI inverts to Dark Mode automatically during `night_start_hour..night_end_hour`. You can also toggle Light/Dark manually for the current session from the top gear (`*` / Settings) overlay via the `◐` button.
 - Sensor alerts (`alert_enabled: true`) automatically wake both Standby and dimmed backlight whenever a threshold is violated.
 
@@ -179,7 +181,7 @@ Each entry in `pages` has:
 | **`chart`** | `state_topic`, `state_json_path`, `min`, `max`, `precision`, `unit`, `alert_*` | Dithered historical area sparkline (`max 120` buffered topic updates); opens detail history modal on tap. |
 | **`select`** | `state_topic`, `command_topic`, `options: [{label, payload}]` | Horizontal row of preset mode buttons highlighting the active payload. |
 | **`weather`** | `label`, `span` | Shows location, current temp/conditions, wind, today's + next 2 days min/max, and Czech nameday. Tap opens 24h hourly curve + 7-day forecast modal. |
-| **`timer`** | `target_widget_id`, `target_state`, `timer_presets` (`[5,15,30]`), `command_topic`, `payload` | Preset countdown buttons (`5m`, `15m`, `30m`). When active, displays live countdown, progress bar, `+5m`, and `✕ Zrušit`. |
+| **`timer`** | `target_widget_id`, `target_state`, `timer_presets` (`[5,15,30]`), `command_topic`, `payload` | Preset countdown buttons (`5m`, `15m`, `30m`). When active, displays live countdown, progress bar, `+5m`, and `✕ Cancel` / `✕ Zrušit`. |
 | **`calendar`** | `label`, `span` | Shows next 3 upcoming events from configured iCal feeds; tap opens full 14-day event modal. |
 
 Common optional widget fields: `broker_id`, `icon` (`auto`, `light`, `thermometer`, `drop`, `bolt`, `plug`, `door`, `home`, `fan`, `sun`, `clock`, `calendar`, `power`), `subtitle`, `span`, `qos` (`0..2`), `retain`, `pin_protected`, `show_in_standby`.

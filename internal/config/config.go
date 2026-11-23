@@ -105,8 +105,20 @@ type DeviceConfig struct {
 	PinLockStandby       bool   `yaml:"pin_lock_standby,omitempty" json:"pin_lock_standby,omitempty"`
 	Orientation          string `yaml:"orientation,omitempty" json:"orientation,omitempty"` // portrait (default), landscape, landscape_cw
 	ThemeMode            string `yaml:"theme_mode,omitempty" json:"theme_mode,omitempty"`   // light (default), dark, auto_night
+	Language             string `yaml:"language,omitempty" json:"language,omitempty"`       // en (default), cs
 	TelemetryIntervalSec int    `yaml:"telemetry_interval_sec" json:"telemetry_interval_sec"`
 	FullRefreshEvery     int    `yaml:"full_refresh_every" json:"full_refresh_every"`
+}
+
+// NormalizeLanguage maps locale codes to supported UI languages ("en" or "cs").
+func NormalizeLanguage(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	switch s {
+	case "cs", "cz", "cs-cz", "cs_cz", "czech":
+		return "cs"
+	default:
+		return "en"
+	}
 }
 
 // IsNightHour reports whether the given clock hour (0..23) falls inside the configured night window.
@@ -289,7 +301,7 @@ func DefaultConfig() *Config {
 		},
 		Weather: WeatherConfig{
 			Enabled:      true,
-			LocationName: "Praha",
+			LocationName: "Prague",
 			Latitude:     50.0755,
 			Longitude:    14.4378,
 		},
@@ -297,6 +309,7 @@ func DefaultConfig() *Config {
 			Title:                "IoT Panel",
 			Width:                600,
 			Height:               800,
+			Language:             "en",
 			PreventSleep:         true,
 			InitialBrightness:    -1,
 			BacklightTimeoutSec:  60,
@@ -315,33 +328,33 @@ func DefaultConfig() *Config {
 		Pages: []PageConfig{
 			{
 				ID:      "home",
-				Title:   "Přehled",
+				Title:   "Overview",
 				Columns: 2,
 				Widgets: []WidgetConfig{
 					{
 						ID:                "living_temp",
 						Type:              "sensor",
-						Label:             "Obývák",
+						Label:             "Living Room",
 						StateTopic:        "home/livingroom/sensor",
 						StateJSONPath:     "$.temperature",
 						Unit:              "°C",
 						SecondaryTopic:    "home/livingroom/sensor",
 						SecondaryJSONPath: "$.humidity",
-						SecondaryUnit:     "% RV",
+						SecondaryUnit:     "% RH",
 					},
 					{
-						ID:            "outside_temp",
-						Type:          "sensor",
-						Label:         "Venku",
-						StateTopic:    "home/outside/temperature",
-						Unit:          "°C",
-						StaleSeconds:  600,
+						ID:           "outside_temp",
+						Type:         "sensor",
+						Label:        "Outside",
+						StateTopic:   "home/outside/temperature",
+						Unit:         "°C",
+						StaleSeconds: 600,
 					},
 					{
 						ID:            "main_light",
 						Type:          "switch",
-						Label:         "Hlavní světlo",
-						Subtitle:      "Obývák",
+						Label:         "Main Light",
+						Subtitle:      "Living Room",
 						StateTopic:    "zigbee2mqtt/living_light",
 						StateJSONPath: "$.state",
 						CommandTopic:  "zigbee2mqtt/living_light/set",
@@ -353,7 +366,7 @@ func DefaultConfig() *Config {
 					{
 						ID:           "lamp",
 						Type:         "switch",
-						Label:        "Stojací lampa",
+						Label:        "Floor Lamp",
 						StateTopic:   "stat/lamp/POWER",
 						CommandTopic: "cmnd/lamp/POWER",
 						PayloadOn:    "ON",
@@ -362,7 +375,7 @@ func DefaultConfig() *Config {
 					{
 						ID:              "thermostat",
 						Type:            "stepper",
-						Label:           "Termostat",
+						Label:           "Thermostat",
 						Span:            2,
 						StateTopic:      "home/thermostat/target",
 						CommandTopic:    "home/thermostat/target/set",
@@ -376,29 +389,29 @@ func DefaultConfig() *Config {
 					{
 						ID:           "scene_select",
 						Type:         "select",
-						Label:        "Režim",
+						Label:        "Mode",
 						Span:         2,
 						StateTopic:   "home/mode/state",
 						CommandTopic: "home/mode/set",
 						Options: []SelectOption{
-							{Label: "Doma", Payload: "home"},
-							{Label: "Večer", Payload: "evening"},
-							{Label: "Noc", Payload: "night"},
-							{Label: "Odchod", Payload: "away"},
+							{Label: "Home", Payload: "home"},
+							{Label: "Evening", Payload: "evening"},
+							{Label: "Night", Payload: "night"},
+							{Label: "Away", Payload: "away"},
 						},
 					},
 				},
 			},
 			{
 				ID:      "actions",
-				Title:   "Akce",
+				Title:   "Actions",
 				Columns: 2,
 				Widgets: []WidgetConfig{
 					{
 						ID:           "all_off",
 						Type:         "button",
-						Label:        "Vypnout vše",
-						Subtitle:     "Světla & zásuvky",
+						Label:        "All Off",
+						Subtitle:     "Lights & outlets",
 						CommandTopic: "home/scenes/set",
 						Payload:      "all_off",
 						Confirm:      true,
@@ -406,15 +419,15 @@ func DefaultConfig() *Config {
 					{
 						ID:           "garage",
 						Type:         "button",
-						Label:        "Garážová vrata",
-						Subtitle:     "Impulz",
+						Label:        "Garage Door",
+						Subtitle:     "Pulse",
 						StateTopic:   "home/garage/door",
 						CommandTopic: "home/garage/door/trigger",
 						Payload:      "TRIGGER",
 						Confirm:      true,
 						ValueMap: map[string]string{
-							"OPEN":   "Otevřeno",
-							"CLOSED": "Zavřeno",
+							"OPEN":   "Open",
+							"CLOSED": "Closed",
 						},
 					},
 				},
@@ -497,7 +510,7 @@ func (c *Config) EffectiveBrokers() []MQTTConfig {
 		primary.ID = "default"
 	}
 	if primary.Name == "" {
-		primary.Name = "Hlavní broker"
+		primary.Name = "Main Broker"
 	}
 	out := make([]MQTTConfig, 0, 1+len(c.MQTT.Brokers))
 	out = append(out, primary)
@@ -518,7 +531,7 @@ func (c *Config) PrimaryBrokerID() string {
 
 // NormalizeAndValidate fills missing defaults and validates structural constraints.
 func (c *Config) NormalizeAndValidate() error {
-	if err := normalizeBroker(&c.MQTT, "default", "Hlavní broker"); err != nil {
+	if err := normalizeBroker(&c.MQTT, "default", "Main Broker"); err != nil {
 		return err
 	}
 	seenBrokers := map[string]struct{}{c.MQTT.ID: {}}
@@ -555,7 +568,7 @@ func (c *Config) NormalizeAndValidate() error {
 		c.HomeKit.StoreDir = "homekit-db"
 	}
 	if strings.TrimSpace(c.Weather.LocationName) == "" {
-		c.Weather.LocationName = "Praha"
+		c.Weather.LocationName = "Prague"
 	}
 	if c.Weather.Latitude == 0 && c.Weather.Longitude == 0 {
 		c.Weather.Latitude = 50.0755
@@ -609,6 +622,7 @@ func (c *Config) NormalizeAndValidate() error {
 	default:
 		c.Device.ThemeMode = "light"
 	}
+	c.Device.Language = NormalizeLanguage(c.Device.Language)
 	for si := range c.Schedules {
 		sc := &c.Schedules[si]
 		if strings.TrimSpace(sc.ID) == "" {

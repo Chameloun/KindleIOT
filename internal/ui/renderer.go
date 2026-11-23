@@ -267,7 +267,7 @@ func (r *Renderer) EvaluateAlerts() []string {
 		if trig, limitStr := w.CheckAlert(f); trig {
 			if !r.activeAlerts[w.ID] {
 				r.activeAlerts[w.ID] = true
-				msg := fmt.Sprintf("⚠ ALARM: %s = %s%s (limit %s%s)", w.Label, formatNumber(f, w.Precision), suffixUnit(w.Unit), limitStr, suffixUnit(w.Unit))
+				msg := fmt.Sprintf(r.tr().AlertPrefix, w.Label, formatNumber(f, w.Precision), suffixUnit(w.Unit), limitStr, suffixUnit(w.Unit))
 				r.noticeText = msg
 				r.noticeUntil = time.Now().Add(2 * time.Minute)
 				r.standbyMode = false
@@ -304,6 +304,17 @@ func (r *Renderer) isWidgetAlerting(wd config.WidgetConfig) (bool, string) {
 		return false, ""
 	}
 	return wd.CheckAlert(f)
+}
+
+func (r *Renderer) lang() string {
+	if r.cfg == nil {
+		return "en"
+	}
+	return config.NormalizeLanguage(r.cfg.Device.Language)
+}
+
+func (r *Renderer) tr() uiStrings {
+	return stringsForLang(r.lang())
 }
 
 // UpdateConfig hot-swaps the configuration cleanly.
@@ -411,7 +422,7 @@ func (r *Renderer) Render() (*image.Gray, bool) {
 		r.drawBanner(w, topH+4, r.lastError, true)
 		contentTop = topH + 48
 	} else if !snap.AllConnected && snap.FirstError != "" {
-		r.drawBanner(w, topH+4, "MQTT: "+snap.FirstError, true)
+		r.drawBanner(w, topH+4, r.tr().MQTTStatusLabel+snap.FirstError, true)
 		contentTop = topH + 48
 	}
 
@@ -424,6 +435,7 @@ func (r *Renderer) Render() (*image.Gray, bool) {
 }
 
 func (r *Renderer) drawHeader(w, topH int, now time.Time, snap mqtt.ManagerSnapshot, hwStat kindle.Status) {
+	tr := r.tr()
 	fillRect(r.canvas, image.Rect(0, 0, w, topH), colWhite)
 	fillRect(r.canvas, image.Rect(0, topH-3, w, topH-1), colBlack)
 	fillRect(r.canvas, image.Rect(0, topH-1, w, topH), colMidGray)
@@ -431,11 +443,11 @@ func (r *Renderer) drawHeader(w, topH int, now time.Time, snap mqtt.ManagerSnaps
 	// Title + clock + connection status
 	drawText(r.canvas, r.fonts.bold20, 14, 26, colBlack, truncateText(r.fonts.bold20, r.cfg.Device.Title, 190))
 
-	statusLabel := "OFFLINE"
+	statusLabel := tr.OfflineLabel
 	if snap.TotalCount > 1 {
-		statusLabel = fmt.Sprintf("● MQTT %d/%d", snap.ConnectedCount, snap.TotalCount)
+		statusLabel = fmt.Sprintf(tr.MQTTMulti, snap.ConnectedCount, snap.TotalCount)
 	} else if snap.AllConnected {
-		statusLabel = "● MQTT OK"
+		statusLabel = tr.MQTTOk
 	}
 	statusBox := image.Rect(14, 33, 108, 53)
 	if snap.AllConnected {
@@ -478,6 +490,7 @@ func (r *Renderer) drawHeader(w, topH int, now time.Time, snap mqtt.ManagerSnaps
 }
 
 func (r *Renderer) drawSettingsOverlay(w, y int, now time.Time, hwStat kindle.Status) int {
+	tr := r.tr()
 	panelH := 142
 	box := image.Rect(12, y, w-12, y+panelH)
 	fillRect(r.canvas, box, colLight)
@@ -485,7 +498,7 @@ func (r *Renderer) drawSettingsOverlay(w, y int, now time.Time, hwStat kindle.St
 
 	// Row 1: Frontlight brightness
 	drawText(r.canvas, r.fonts.bold16, box.Min.X+12, box.Min.Y+30, colBlack,
-		fmt.Sprintf("Podsvícení: %d / 24", max0(hwStat.Brightness)))
+		fmt.Sprintf(tr.BacklightLabel, max0(hwStat.Brightness)))
 
 	minusR := image.Rect(box.Max.X-190, box.Min.Y+8, box.Max.X-128, box.Min.Y+48)
 	plusR := image.Rect(box.Max.X-120, box.Min.Y+8, box.Max.X-58, box.Min.Y+48)
@@ -493,15 +506,15 @@ func (r *Renderer) drawSettingsOverlay(w, y int, now time.Time, hwStat kindle.St
 
 	drawButtonBox(r.canvas, minusR, r.fonts.bold20, "−", false)
 	drawButtonBox(r.canvas, plusR, r.fonts.bold20, "+", false)
-	drawButtonBox(r.canvas, closeR, r.fonts.bold16, "OK", true)
+	drawButtonBox(r.canvas, closeR, r.fonts.bold16, tr.OK, true)
 
 	// Row 2: Keep awake + Enter Standby + Theme toggle (+ PIN Lock when configured)
 	row2Y0, row2Y1 := box.Min.Y+56, box.Min.Y+96
 	availW := box.Dx() - 24
 	hasPin := strings.TrimSpace(r.cfg.Device.PinCode) != ""
-	awakeLabel := "Bez uspání: VYP"
+	awakeLabel := tr.AwakeOff
 	if r.keepAwake {
-		awakeLabel = "Bez uspání: ZAP"
+		awakeLabel = tr.AwakeOn
 	}
 	darkOn := r.isDarkModeLocked(now)
 
@@ -523,14 +536,14 @@ func (r *Renderer) drawSettingsOverlay(w, y int, now time.Time, hwStat kindle.St
 		themeR := image.Rect(standbyR.Max.X+8, row2Y0, standbyR.Max.X+8+w3, row2Y1)
 		lockR := image.Rect(themeR.Max.X+8, row2Y0, themeR.Max.X+8+w4, row2Y1)
 
-		themeLabel := "◐ Světlý"
+		themeLabel := tr.ThemeLightShort
 		if darkOn {
-			themeLabel = "◐ Tmavý"
+			themeLabel = tr.ThemeDarkShort
 		}
 		drawButtonBox(r.canvas, awakeR, r.fonts.bold16, awakeLabel, r.keepAwake)
-		drawButtonBox(r.canvas, standbyR, r.fonts.bold16, "☾ Spořič", false)
+		drawButtonBox(r.canvas, standbyR, r.fonts.bold16, tr.StandbyShort, false)
 		drawButtonBox(r.canvas, themeR, r.fonts.bold16, themeLabel, darkOn)
-		drawButtonBox(r.canvas, lockR, r.fonts.bold16, "Zamknout", false)
+		drawButtonBox(r.canvas, lockR, r.fonts.bold16, tr.LockBtn, false)
 
 		hits = append(hits,
 			HitAction{Rect: awakeR, Type: ActionToggleKeepAwake},
@@ -547,12 +560,12 @@ func (r *Renderer) drawSettingsOverlay(w, y int, now time.Time, hwStat kindle.St
 		standbyR := image.Rect(awakeR.Max.X+8, row2Y0, awakeR.Max.X+8+w2, row2Y1)
 		themeR := image.Rect(standbyR.Max.X+8, row2Y0, standbyR.Max.X+8+w3, row2Y1)
 
-		themeLabel := "◐ Motiv: Světlý"
+		themeLabel := tr.ThemeLightFull
 		if darkOn {
-			themeLabel = "◐ Motiv: Tmavý"
+			themeLabel = tr.ThemeDarkFull
 		}
 		drawButtonBox(r.canvas, awakeR, r.fonts.bold16, awakeLabel, r.keepAwake)
-		drawButtonBox(r.canvas, standbyR, r.fonts.bold16, "☾ Spořič nyní", false)
+		drawButtonBox(r.canvas, standbyR, r.fonts.bold16, tr.StandbyNow, false)
 		drawButtonBox(r.canvas, themeR, r.fonts.bold16, themeLabel, darkOn)
 
 		hits = append(hits,
@@ -563,16 +576,16 @@ func (r *Renderer) drawSettingsOverlay(w, y int, now time.Time, hwStat kindle.St
 	}
 
 	// Row 3: Power saving summary + Web editor URL
-	blInfo := "Zhasnutí: trvale svítí"
+	blInfo := tr.DimNever
 	if r.cfg.Device.BacklightTimeoutSec > 0 {
-		blInfo = fmt.Sprintf("Zhasnutí: %ds", r.cfg.Device.BacklightTimeoutSec)
+		blInfo = fmt.Sprintf(tr.DimAfterSec, r.cfg.Device.BacklightTimeoutSec)
 	}
 	if r.cfg.Device.NightModeEnabled {
-		blInfo += fmt.Sprintf(" | Noc %d–%dh (jas %d)", r.cfg.Device.NightStartHour, r.cfg.Device.NightEndHour, r.cfg.Device.NightBrightness)
+		blInfo += fmt.Sprintf(tr.NightWindowFmt, r.cfg.Device.NightStartHour, r.cfg.Device.NightEndHour, r.cfg.Device.NightBrightness)
 	}
 	drawText(r.canvas, r.fonts.small, box.Min.X+12, box.Min.Y+124, colDark, truncateText(r.fonts.small, blInfo, 320))
 
-	webText := "Web: vypnuto"
+	webText := tr.WebOff
 	if r.cfg.Web.Listen != "" {
 		ip := hwStat.IP
 		if ip == "" {
@@ -708,14 +721,15 @@ func (r *Renderer) drawPageContent(w, top, bottom int, now time.Time) {
 	}
 
 	if totalSubPages > 1 {
+		tr := r.tr()
 		py := bottom - 38
 		prevR := image.Rect(padX, py, padX+110, bottom)
 		nextR := image.Rect(w-padX-110, py, w-padX, bottom)
 		lblR := image.Rect(prevR.Max.X+8, py, nextR.Min.X-8, bottom)
 
-		drawButtonBox(r.canvas, prevR, r.fonts.bold16, "◀ Zpět", false)
-		drawCenteredText(r.canvas, r.fonts.regular, lblR, colDark, fmt.Sprintf("Strana %d / %d", r.subPage+1, totalSubPages))
-		drawButtonBox(r.canvas, nextR, r.fonts.bold16, "Další ▶", false)
+		drawButtonBox(r.canvas, prevR, r.fonts.bold16, tr.PagePrev, false)
+		drawCenteredText(r.canvas, r.fonts.regular, lblR, colDark, fmt.Sprintf(tr.PageOf, r.subPage+1, totalSubPages))
+		drawButtonBox(r.canvas, nextR, r.fonts.bold16, tr.PageNext, false)
 
 		r.hits = append(r.hits,
 			HitAction{Rect: prevR, Type: ActionSubPagePrev},
@@ -757,6 +771,7 @@ func pinPrefixedLabel(wd config.WidgetConfig) string {
 }
 
 func (r *Renderer) drawSwitchCard(rect image.Rectangle, wd config.WidgetConfig) {
+	tr := r.tr()
 	isOn := false
 	hasVal := false
 	if tv, ok := r.mq.GetTopic(wd.BrokerID, wd.StateTopic); ok {
@@ -768,14 +783,14 @@ func (r *Renderer) drawSwitchCard(rect image.Rectangle, wd config.WidgetConfig) 
 	face := drawCardFrame(r.canvas, rect, 10, isOn)
 	fg := colBlack
 	subCol := colDark
-	statusText := "VYPNUTO"
+	statusText := tr.SwitchOff
 	if !hasVal && wd.StateTopic != "" && !strings.HasPrefix(wd.StateTopic, "local/") {
-		statusText = "NEZNÁMÝ"
+		statusText = tr.SwitchUnknown
 	}
 	if isOn {
 		fg = colWhite
 		subCol = colLight
-		statusText = "ZAPNUTO"
+		statusText = tr.SwitchOn
 	}
 
 	icon := resolveWidgetIcon(wd)
@@ -806,6 +821,7 @@ func (r *Renderer) drawSwitchCard(rect image.Rectangle, wd config.WidgetConfig) 
 }
 
 func (r *Renderer) drawButtonCard(rect image.Rectangle, wd config.WidgetConfig, now time.Time) {
+	tr := r.tr()
 	confirming := r.confirmID == wd.ID && now.Before(r.confirmUntil)
 	face := drawCardFrame(r.canvas, rect, 10, confirming)
 
@@ -826,7 +842,7 @@ func (r *Renderer) drawButtonCard(rect image.Rectangle, wd config.WidgetConfig, 
 
 	sub := wd.Subtitle
 	if sub == "" && len(wd.MacroActions) > 0 {
-		sub = fmt.Sprintf("Makro scéna (%d akcí)", len(wd.MacroActions))
+		sub = fmt.Sprintf(tr.MacroSub, len(wd.MacroActions))
 	}
 	if wd.StateTopic != "" {
 		if tv, ok := r.mq.GetTopic(wd.BrokerID, wd.StateTopic); ok {
@@ -840,7 +856,7 @@ func (r *Renderer) drawButtonCard(rect image.Rectangle, wd config.WidgetConfig, 
 		}
 	}
 	if confirming {
-		sub = "Klepni znovu pro potvrzení"
+		sub = tr.TapAgainConfirm
 	}
 	if sub != "" {
 		drawText(r.canvas, r.fonts.small, textX, face.Min.Y+48, subCol,
@@ -850,11 +866,11 @@ func (r *Renderer) drawButtonCard(rect image.Rectangle, wd config.WidgetConfig, 
 	pill := image.Rect(face.Min.X+14, face.Max.Y-40, face.Max.X-14, face.Max.Y-10)
 	if confirming {
 		fillRoundedRect(r.canvas, pill, 8, colWhite)
-		drawCenteredText(r.canvas, r.fonts.bold16, pill, colBlack, "⚠ POTVRDIT AKCI")
+		drawCenteredText(r.canvas, r.fonts.bold16, pill, colBlack, tr.ConfirmAction)
 	} else {
-		btnTxt := "▶ SPUSTIT"
+		btnTxt := tr.RunBtn
 		if len(wd.MacroActions) > 0 {
-			btnTxt = "▶ SPUSTIT SCÉNU"
+			btnTxt = tr.RunSceneBtn
 		}
 		drawRoundedButton(r.canvas, pill, 8, r.fonts.bold16, btnTxt, false)
 	}
@@ -958,8 +974,9 @@ func (r *Renderer) drawSensorCard(rect image.Rectangle, wd config.WidgetConfig, 
 		drawRightText(r.canvas, r.fonts.bold16, hdr.Max.X-10, hdr.Min.Y+23, hdrFg, trend)
 	}
 
+	tr := r.tr()
 	valText := "—"
-	ageText := "čekám"
+	ageText := tr.Waiting
 	stale := false
 
 	if tv, ok := r.mq.GetTopic(wd.BrokerID, wd.StateTopic); ok {
@@ -980,9 +997,9 @@ func (r *Renderer) drawSensorCard(rect image.Rectangle, wd config.WidgetConfig, 
 		if wd.StaleSeconds > 0 && age > time.Duration(wd.StaleSeconds)*time.Second {
 			stale = true
 		}
-		ageText = "● " + formatAge(age)
+		ageText = "● " + formatAgeLang(age, tr)
 		if stale {
-			ageText = "⚠ " + formatAge(age)
+			ageText = "⚠ " + formatAgeLang(age, tr)
 		}
 	}
 
@@ -1163,7 +1180,7 @@ func (r *Renderer) drawChartCard(rect image.Rectangle, wd config.WidgetConfig) {
 	}
 
 	if len(pts) == 0 {
-		drawCenteredText(r.canvas, r.fonts.small, plot, colDark, "čekám na data grafu")
+		drawCenteredText(r.canvas, r.fonts.small, plot, colDark, r.tr().WaitingChart)
 		return
 	}
 
@@ -1220,21 +1237,23 @@ func (r *Renderer) drawChartCard(rect image.Rectangle, wd config.WidgetConfig) {
 		fillCircle(r.canvas, last.X, last.Y, 2, colWhite)
 	}
 
+	tr := r.tr()
 	drawText(r.canvas, r.fonts.small, plot.Min.X, face.Max.Y-6, colDark,
-		fmt.Sprintf("▼ min %s%s", formatNumber(minV, wd.Precision), suffixUnit(wd.Unit)))
+		fmt.Sprintf(tr.MinLabel, formatNumber(minV, wd.Precision), suffixUnit(wd.Unit)))
 	drawRightText(r.canvas, r.fonts.small, plot.Max.X, face.Max.Y-6, colDark,
-		fmt.Sprintf("▲ max %s%s", formatNumber(maxV, wd.Precision), suffixUnit(wd.Unit)))
+		fmt.Sprintf(tr.MaxLabel, formatNumber(maxV, wd.Precision), suffixUnit(wd.Unit)))
 	r.hits = append(r.hits, HitAction{Rect: rect, Type: ActionOpenSensorDetail, Widget: wd})
 }
 
 func (r *Renderer) drawFloorplanPage(w, top, bottom int, page config.PageConfig, now time.Time) {
+	tr := r.tr()
 	padX := 14
 	outer := image.Rect(padX, top, w-padX, bottom)
 	area := drawCardFrame(r.canvas, outer, 10, false)
 
 	fp := page.Floorplan
 	if fp == nil || (len(fp.Shapes) == 0 && len(fp.Pins) == 0) {
-		drawCenteredText(r.canvas, r.fonts.regular, area, colDark, "Prázdný půdorys — nakresli místnosti ve webovém editoru")
+		drawCenteredText(r.canvas, r.fonts.regular, area, colDark, tr.EmptyFloorplan)
 		return
 	}
 
@@ -1306,16 +1325,16 @@ func (r *Renderer) drawFloorplanPage(w, top, bottom int, page config.PageConfig,
 			active := isOn || confirming
 			face := drawCardFrame(r.canvas, badge, 8, active)
 			fg := colBlack
-			status := "VYP"
+			status := tr.SwitchOffShort
 			if wd.Type == "button" {
-				status = "▶ AKCE"
+				status = tr.RunShort
 			}
 			if active {
 				fg = colWhite
 				if isOn {
-					status = "● ZAP"
+					status = tr.SwitchOnShort
 				} else {
-					status = "POTVRDIT"
+					status = tr.ConfirmShort
 				}
 			}
 			drawIconBadge(r.canvas, face.Min.X+19, (face.Min.Y+face.Max.Y)/2, 12, icon, active)
@@ -1782,7 +1801,8 @@ func (r *Renderer) publishWithFeedback(brokerID, topic string, qos byte, retain 
 	err := r.mq.Publish(brokerID, topic, qos, retain, payload)
 	if err != nil {
 		r.mu.Lock()
-		r.lastError = "Chyba odeslání: " + err.Error()
+		tr := stringsForLang(config.NormalizeLanguage(r.cfg.Device.Language))
+		r.lastError = tr.SendErrPrefix + err.Error()
 		r.lastErrUntil = time.Now().Add(4 * time.Second)
 		r.mu.Unlock()
 	}
@@ -1871,16 +1891,6 @@ func suffixUnit(u string) string {
 		return " " + u
 	}
 	return " " + u
-}
-
-func formatAge(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("před %ds", int(d.Seconds()))
-	}
-	if d < time.Hour {
-		return fmt.Sprintf("před %dm", int(d.Minutes()))
-	}
-	return fmt.Sprintf("před %dh", int(d.Hours()))
 }
 
 func max0(v int) int {
@@ -2021,15 +2031,6 @@ func drawVerticalArea(img *image.Gray, p0, p1 image.Point, baseY int, c color.Gr
 	}
 }
 
-func czechDateLine(t time.Time) string {
-	days := [...]string{"Neděle", "Pondělí", "Úterý", "Středa", "Čtvrtek", "Pátek", "Sobota"}
-	svatek := CzechNameDay(t)
-	if svatek != "" {
-		return fmt.Sprintf("%s %d. %d. %d • %s", days[int(t.Weekday())], t.Day(), int(t.Month()), t.Year(), svatek)
-	}
-	return fmt.Sprintf("%s %d. %d. %d", days[int(t.Weekday())], t.Day(), int(t.Month()), t.Year())
-}
-
 func (r *Renderer) sensorTrend(wd config.WidgetConfig) string {
 	pts := r.mq.GetHistory(wd.BrokerID, wd.StateTopic, wd.StateJSONPath, 12)
 	if len(pts) < 2 {
@@ -2105,7 +2106,7 @@ func (r *Renderer) executeMacro(wd config.WidgetConfig) {
 	for _, act := range wd.MacroActions {
 		r.executeWidgetAction(act.WidgetID, act.State, act.BrokerID, act.Topic, act.Payload, wd.QoS, wd.Retain)
 	}
-	r.ShowNotice("✓ Scéna spuštěna: "+wd.Label, 4*time.Second)
+	r.ShowNotice(r.tr().SceneTriggered+wd.Label, 4*time.Second)
 }
 
 // TickTimersAndSchedules advances running countdown timers and triggers any due daily schedules.
@@ -2124,6 +2125,7 @@ func (r *Renderer) TickTimersAndSchedules(now time.Time) (changed bool, wokeAler
 	var actions []pendingAction
 
 	r.mu.Lock()
+	tr := stringsForLang(config.NormalizeLanguage(r.cfg.Device.Language))
 	if r.activeTimers == nil {
 		r.activeTimers = make(map[string]activeTimer)
 	}
@@ -2146,7 +2148,7 @@ func (r *Renderer) TickTimersAndSchedules(now time.Time) (changed bool, wokeAler
 				payload:  tm.Widget.Payload,
 				qos:      tm.Widget.QoS,
 				retain:   tm.Widget.Retain,
-				notice:   "✓ Časovač dokončen: " + tm.Widget.Label,
+				notice:   tr.TimerFinished + tm.Widget.Label,
 				wake:     true,
 			})
 		} else {
@@ -2180,7 +2182,7 @@ func (r *Renderer) TickTimersAndSchedules(now time.Time) (changed bool, wokeAler
 			brokerID: sc.BrokerID,
 			topic:    sc.Topic,
 			payload:  sc.Payload,
-			notice:   "● Plán spuštěn: " + name,
+			notice:   tr.ScheduleTriggered + name,
 		})
 	}
 	if len(r.lastSchedFired) > 100 {
@@ -2276,7 +2278,7 @@ func (r *Renderer) drawTimerCard(rect image.Rectangle, wd config.WidgetConfig, n
 		fillRoundedRect(r.canvas, addR, 7, colWhite)
 		drawCenteredText(r.canvas, r.fonts.bold16, addR, colBlack, "+5m")
 		fillRoundedRect(r.canvas, canR, 7, colWhite)
-		drawCenteredText(r.canvas, r.fonts.bold16, canR, colBlack, "✕ Zrušit")
+		drawCenteredText(r.canvas, r.fonts.bold16, canR, colBlack, r.tr().TimerCancel)
 
 		r.hits = append(r.hits,
 			HitAction{Rect: addR, Type: ActionTimerAdd, Widget: wd, IntVal: 5},
@@ -2285,6 +2287,7 @@ func (r *Renderer) drawTimerCard(rect image.Rectangle, wd config.WidgetConfig, n
 		return
 	}
 
+	tr := r.tr()
 	face := drawCardFrame(r.canvas, rect, 10, false)
 	icon := resolveWidgetIcon(wd)
 	drawIconBadge(r.canvas, face.Min.X+26, face.Min.Y+26, 15, icon, false)
@@ -2294,17 +2297,17 @@ func (r *Renderer) drawTimerCard(rect image.Rectangle, wd config.WidgetConfig, n
 	sub := wd.Subtitle
 	if sub == "" && wd.TargetWidgetID != "" {
 		if tw, ok := r.lookupWidgetByIDLocked(wd.TargetWidgetID); ok {
-			actVerb := "Vypne"
+			actVerb := tr.TimerTurnsOff
 			if strings.EqualFold(wd.TargetState, "ON") {
-				actVerb = "Zapne"
+				actVerb = tr.TimerTurnsOn
 			} else if strings.EqualFold(wd.TargetState, "TOGGLE") {
-				actVerb = "Přepne"
+				actVerb = tr.TimerToggles
 			}
 			sub = actVerb + ": " + tw.Label
 		}
 	}
 	if sub == "" {
-		sub = "Kuchyňská minutka"
+		sub = tr.TimerDefaultSub
 	}
 	drawText(r.canvas, r.fonts.small, face.Min.X+48, face.Min.Y+46, colDark,
 		truncateText(r.fonts.small, sub, face.Dx()-58))
@@ -2335,37 +2338,9 @@ func (r *Renderer) drawTimerCard(rect image.Rectangle, wd config.WidgetConfig, n
 	}
 }
 
-func czechWeekdayShort(t time.Time) string {
-	days := [...]string{"Ne", "Po", "Út", "St", "Čt", "Pá", "So"}
-	return days[int(t.Weekday())]
-}
-
-func formatEventWhen(ev calendar.Event, now time.Time) string {
-	loc := now.Location()
-	st := ev.Start.In(loc)
-	y, m, d := now.Date()
-	ey, em, ed := st.Date()
-	tom := time.Date(y, m, d+1, 0, 0, 0, 0, loc)
-
-	var dayLbl string
-	switch {
-	case ey == y && em == m && ed == d:
-		dayLbl = "Dnes"
-	case ey == tom.Year() && em == tom.Month() && ed == tom.Day():
-		dayLbl = "Zítra"
-	default:
-		dayLbl = fmt.Sprintf("%s %d.%d.", czechWeekdayShort(st), ed, int(em))
-	}
-	if ev.AllDay {
-		if dayLbl == "Dnes" || dayLbl == "Zítra" {
-			return dayLbl + " (celý)"
-		}
-		return dayLbl
-	}
-	return fmt.Sprintf("%s %02d:%02d", dayLbl, st.Hour(), st.Minute())
-}
-
 func (r *Renderer) drawCalendarCard(rect image.Rectangle, wd config.WidgetConfig, now time.Time) {
+	lang := r.lang()
+	tr := r.tr()
 	face := drawCardFrame(r.canvas, rect, 10, false)
 	r.hits = append(r.hits, HitAction{Rect: rect, Type: ActionOpenCalendarDetail, Widget: wd})
 
@@ -2376,7 +2351,7 @@ func (r *Renderer) drawCalendarCard(rect image.Rectangle, wd config.WidgetConfig
 	drawIconBadge(r.canvas, hdr.Min.X+18, hdr.Min.Y+16, 12, "calendar", false)
 	title := wd.Label
 	if title == "" {
-		title = "Kalendář"
+		title = tr.CalendarTitle
 	}
 	drawText(r.canvas, r.fonts.bold16, hdr.Min.X+36, hdr.Min.Y+22, colBlack,
 		truncateText(r.fonts.bold16, title, hdr.Dx()-110))
@@ -2384,18 +2359,18 @@ func (r *Renderer) drawCalendarCard(rect image.Rectangle, wd config.WidgetConfig
 	if !r.cfg.Calendar.Enabled || r.calSvc == nil {
 		drawCenteredText(r.canvas, r.fonts.regular,
 			image.Rect(face.Min.X+10, face.Min.Y+42, face.Max.X-10, face.Max.Y-10),
-			colDark, "Zapněte .ics kalendář v nastavení")
+			colDark, tr.CalendarEnableHint)
 		return
 	}
 
 	evs := r.calSvc.Events()
 	drawRightText(r.canvas, r.fonts.small, hdr.Max.X-8, hdr.Min.Y+21, colDark,
-		fmt.Sprintf("%d udál.", len(evs)))
+		fmt.Sprintf(tr.EventsCount, len(evs)))
 
 	if len(evs) == 0 {
 		drawCenteredText(r.canvas, r.fonts.regular,
 			image.Rect(face.Min.X+10, face.Min.Y+42, face.Max.X-10, face.Max.Y-10),
-			colDark, "Žádné události (14 dní)")
+			colDark, tr.CalendarEmptyHint)
 		return
 	}
 
@@ -2408,21 +2383,23 @@ func (r *Renderer) drawCalendarCard(rect image.Rectangle, wd config.WidgetConfig
 	if rowH < 24 {
 		rowH = 24
 	}
-	whenColW := 124
+	whenColW := 128
 	for i := 0; i < maxShow; i++ {
 		ry := rowTop + i*rowH
 		if i > 0 {
 			drawDashedHLine(r.canvas, face.Min.X+10, face.Max.X-10, ry-2, 3, 3, colSubtleGray)
 		}
-		when := formatEventWhen(evs[i], now)
+		when := formatEventWhenLang(evs[i], now, lang)
 		drawText(r.canvas, r.fonts.small, face.Min.X+12, ry+17, colDark,
 			truncateText(r.fonts.small, when, whenColW))
 		drawText(r.canvas, r.fonts.bold16, face.Min.X+12+whenColW+8, ry+18, colBlack,
-			truncateText(r.fonts.bold16, evs[i].Summary, face.Dx()-30-whenColW))
+			truncateText(r.fonts.bold16, localizedEventSummary(evs[i], tr), face.Dx()-30-whenColW))
 	}
 }
 
 func (r *Renderer) drawWeatherCard(rect image.Rectangle, wd config.WidgetConfig, now time.Time) {
+	lang := r.lang()
+	tr := r.tr()
 	face := drawCardFrame(r.canvas, rect, 10, false)
 	r.hits = append(r.hits, HitAction{Rect: rect, Type: ActionOpenWeatherDetail, Widget: wd})
 
@@ -2450,28 +2427,29 @@ func (r *Renderer) drawWeatherCard(rect image.Rectangle, wd config.WidgetConfig,
 	drawText(r.canvas, r.fonts.bold16, hdr.Min.X+36, hdr.Min.Y+22, colBlack,
 		truncateText(r.fonts.bold16, title, hdr.Dx()-130))
 
-	if sv := CzechNameDay(now); sv != "" {
+	if hdrRight := formatWeatherHeaderRight(now, lang); hdrRight != "" {
 		drawRightText(r.canvas, r.fonts.small, hdr.Max.X-8, hdr.Min.Y+21, colDark,
-			truncateText(r.fonts.small, "Svátek: "+sv, 125))
+			truncateText(r.fonts.small, hdrRight, 125))
 	}
 
 	if !ws.Available {
 		drawCenteredText(r.canvas, r.fonts.regular,
 			image.Rect(face.Min.X+10, face.Min.Y+42, face.Max.X-10, face.Max.Y-10),
-			colDark, "Načítám počasí (Open-Meteo)…")
+			colDark, tr.WeatherLoading)
 		return
 	}
 
+	desc, _ := weather.DescribeWMOLang(ws.WeatherCode, lang)
 	tempStr := fmt.Sprintf("%.1f °C", ws.Temperature)
 	drawText(r.canvas, r.fonts.bold28, face.Min.X+14, face.Min.Y+72, colBlack, tempStr)
 	drawText(r.canvas, r.fonts.bold16, face.Min.X+138, face.Min.Y+64, colBlack,
-		truncateText(r.fonts.bold16, ws.Description, face.Dx()-150))
+		truncateText(r.fonts.bold16, desc, face.Dx()-150))
 	drawText(r.canvas, r.fonts.small, face.Min.X+138, face.Min.Y+81, colDark,
-		fmt.Sprintf("Vítr %.0f km/h", ws.WindSpeed))
+		fmt.Sprintf(tr.WindFmt, ws.WindSpeed))
 
 	// 3-day mini forecast strip at bottom
 	drawDashedHLine(r.canvas, face.Min.X+12, face.Max.X-12, face.Max.Y-34, 3, 3, colSubtleGray)
-	dayLabels := [...]string{"Dnes", "Zítra", "Pozítří"}
+	dayLabels := [...]string{tr.Today, tr.Tomorrow, tr.DayAfterTomorrow}
 	nDays := len(ws.Daily)
 	if nDays > 3 {
 		nDays = 3
@@ -2539,6 +2517,8 @@ func (r *Renderer) drawDitheredPlot(plot image.Rectangle, values []float64, minV
 }
 
 func (r *Renderer) drawWeatherDetailModal(w, top, bottom int, now time.Time) {
+	lang := r.lang()
+	tr := r.tr()
 	outer := image.Rect(14, top, w-14, bottom)
 	face := drawCardFrame(r.canvas, outer, 12, false)
 
@@ -2557,37 +2537,38 @@ func (r *Renderer) drawWeatherDetailModal(w, top, bottom int, now time.Time) {
 	}
 	locName := ws.LocationName
 	if locName == "" {
-		locName = "Předpověď"
+		locName = tr.ForecastTitle
 	}
 	drawIconBadge(r.canvas, hdr.Min.X+24, hdr.Min.Y+24, 15, icon, false)
 	drawText(r.canvas, r.fonts.bold20, hdr.Min.X+48, hdr.Min.Y+31, colBlack,
-		truncateText(r.fonts.bold20, "Počasí • "+locName, hdr.Dx()-164))
+		truncateText(r.fonts.bold20, tr.WeatherModalPrefix+locName, hdr.Dx()-164))
 
 	closeBtn := image.Rect(hdr.Max.X-108, hdr.Min.Y+6, hdr.Max.X-8, hdr.Max.Y-6)
-	drawRoundedButton(r.canvas, closeBtn, 7, r.fonts.bold16, "✕ Zavřít", true)
+	drawRoundedButton(r.canvas, closeBtn, 7, r.fonts.bold16, tr.CloseBtn, true)
 	r.hits = append(r.hits, HitAction{Rect: closeBtn, Type: ActionCloseDetail})
 
 	if !ws.Available {
 		drawCenteredText(r.canvas, r.fonts.regular,
 			image.Rect(face.Min.X+16, hdr.Max.Y+20, face.Max.X-16, face.Max.Y-20),
-			colDark, "Počasí zatím není načteno (Open-Meteo)…")
+			colDark, tr.WeatherLoading)
 		return
 	}
 
 	// Hero summary strip
+	heroDesc, _ := weather.DescribeWMOLang(ws.WeatherCode, lang)
 	heroY := hdr.Max.Y + 34
 	drawText(r.canvas, r.fonts.bold28, face.Min.X+16, heroY, colBlack, fmt.Sprintf("%.1f °C", ws.Temperature))
-	drawText(r.canvas, r.fonts.bold16, face.Min.X+134, heroY-10, colBlack, truncateText(r.fonts.bold16, ws.Description, 220))
-	drawText(r.canvas, r.fonts.small, face.Min.X+134, heroY+8, colDark, fmt.Sprintf("Vítr %.0f km/h", ws.WindSpeed))
-	if sv := CzechNameDay(now); sv != "" {
-		drawRightText(r.canvas, r.fonts.small, face.Max.X-16, heroY-4, colDark, truncateText(r.fonts.small, "Svátek: "+sv, 190))
+	drawText(r.canvas, r.fonts.bold16, face.Min.X+134, heroY-10, colBlack, truncateText(r.fonts.bold16, heroDesc, 220))
+	drawText(r.canvas, r.fonts.small, face.Min.X+134, heroY+8, colDark, fmt.Sprintf(tr.WindFmt, ws.WindSpeed))
+	if hdrRight := formatWeatherHeaderRight(now, lang); hdrRight != "" {
+		drawRightText(r.canvas, r.fonts.small, face.Max.X-16, heroY-4, colDark, truncateText(r.fonts.small, hdrRight, 190))
 	}
 
 	bodyTop := hdr.Max.Y + 52
 	drawHourly := func(box image.Rectangle) {
-		drawText(r.canvas, r.fonts.bold16, box.Min.X, box.Min.Y+16, colBlack, "Hodinový vývoj (24h)")
+		drawText(r.canvas, r.fonts.bold16, box.Min.X, box.Min.Y+16, colBlack, tr.HourlyTitle)
 		if len(ws.Hourly) == 0 {
-			drawCenteredText(r.canvas, r.fonts.small, image.Rect(box.Min.X, box.Min.Y+24, box.Max.X, box.Max.Y), colDark, "Bez hodinových dat")
+			drawCenteredText(r.canvas, r.fonts.small, image.Rect(box.Min.X, box.Min.Y+24, box.Max.X, box.Max.Y), colDark, tr.HourlyEmpty)
 			return
 		}
 		vals := make([]float64, len(ws.Hourly))
@@ -2605,7 +2586,7 @@ func (r *Renderer) drawWeatherDetailModal(w, top, bottom int, now time.Time) {
 				maxRain = h.PrecipProb
 			}
 		}
-		drawRightText(r.canvas, r.fonts.small, box.Max.X, box.Min.Y+15, colDark, fmt.Sprintf("Srážky max %d%%", maxRain))
+		drawRightText(r.canvas, r.fonts.small, box.Max.X, box.Min.Y+15, colDark, fmt.Sprintf(tr.RainMaxFmt, maxRain))
 		plot := image.Rect(box.Min.X, box.Min.Y+24, box.Max.X, box.Max.Y-24)
 		r.drawDitheredPlot(plot, vals, minV, maxV, 8, 2)
 
@@ -2617,14 +2598,14 @@ func (r *Renderer) drawWeatherDetailModal(w, top, bottom int, now time.Time) {
 	}
 
 	drawDaily := func(box image.Rectangle) {
-		drawText(r.canvas, r.fonts.bold16, box.Min.X, box.Min.Y+16, colBlack, "Výhled na 7 dní")
+		drawText(r.canvas, r.fonts.bold16, box.Min.X, box.Min.Y+16, colBlack, tr.WeeklyTitle)
 		listTop := box.Min.Y + 24
 		n := len(ws.Daily)
 		if n > 7 {
 			n = 7
 		}
 		if n == 0 {
-			drawCenteredText(r.canvas, r.fonts.small, image.Rect(box.Min.X, listTop, box.Max.X, box.Max.Y), colDark, "Bez denních dat")
+			drawCenteredText(r.canvas, r.fonts.small, image.Rect(box.Min.X, listTop, box.Max.X, box.Max.Y), colDark, tr.DailyEmpty)
 			return
 		}
 		rowH := (box.Max.Y - listTop) / 7
@@ -2640,16 +2621,13 @@ func (r *Renderer) drawWeatherDetailModal(w, top, bottom int, now time.Time) {
 
 			dayTxt := df.Date
 			if parsedD, err := time.Parse("2006-01-02", df.Date); err == nil {
-				if i == 0 {
-					dayTxt = fmt.Sprintf("Dnes %d.%d.", parsedD.Day(), int(parsedD.Month()))
-				} else {
-					dayTxt = fmt.Sprintf("%s %d.%d.", czechWeekdayShort(parsedD), parsedD.Day(), int(parsedD.Month()))
-				}
+				dayTxt = formatDailyRowDate(parsedD, i, lang)
 			}
+			dDesc, _ := weather.DescribeWMOLang(df.WeatherCode, lang)
 			midY := ry + rowH/2 + 5
 			drawText(r.canvas, r.fonts.bold16, rowR.Min.X+10, midY, colBlack, dayTxt)
 			drawText(r.canvas, r.fonts.small, rowR.Min.X+128, midY-1, colDark,
-				truncateText(r.fonts.small, fmt.Sprintf("%s (%d%%)", df.Description, df.PrecipProbMax), rowR.Dx()-218))
+				truncateText(r.fonts.small, fmt.Sprintf("%s (%d%%)", dDesc, df.PrecipProbMax), rowR.Dx()-218))
 			drawRightText(r.canvas, r.fonts.bold16, rowR.Max.X-10, midY, colBlack,
 				fmt.Sprintf("%.0f° / %.0f°", df.TempMin, df.TempMax))
 		}
@@ -2669,6 +2647,8 @@ func (r *Renderer) drawWeatherDetailModal(w, top, bottom int, now time.Time) {
 }
 
 func (r *Renderer) drawCalendarDetailModal(w, top, bottom int, now time.Time) {
+	lang := r.lang()
+	tr := r.tr()
 	outer := image.Rect(14, top, w-14, bottom)
 	face := drawCardFrame(r.canvas, outer, 12, false)
 
@@ -2678,20 +2658,20 @@ func (r *Renderer) drawCalendarDetailModal(w, top, bottom int, now time.Time) {
 
 	drawIconBadge(r.canvas, hdr.Min.X+24, hdr.Min.Y+24, 15, "calendar", false)
 	drawText(r.canvas, r.fonts.bold20, hdr.Min.X+48, hdr.Min.Y+31, colBlack,
-		truncateText(r.fonts.bold20, "Kalendář událostí", hdr.Dx()-164))
+		truncateText(r.fonts.bold20, tr.CalendarModalTitle, hdr.Dx()-164))
 
 	closeBtn := image.Rect(hdr.Max.X-108, hdr.Min.Y+6, hdr.Max.X-8, hdr.Max.Y-6)
-	drawRoundedButton(r.canvas, closeBtn, 7, r.fonts.bold16, "✕ Zavřít", true)
+	drawRoundedButton(r.canvas, closeBtn, 7, r.fonts.bold16, tr.CloseBtn, true)
 	r.hits = append(r.hits, HitAction{Rect: closeBtn, Type: ActionCloseDetail})
 
 	body := image.Rect(face.Min.X+16, hdr.Max.Y+12, face.Max.X-16, face.Max.Y-14)
 	if !r.cfg.Calendar.Enabled || r.calSvc == nil {
-		drawCenteredText(r.canvas, r.fonts.regular, body, colDark, "Kalendář není aktivní — zadejte .ics odkaz ve webovém nastavení")
+		drawCenteredText(r.canvas, r.fonts.regular, body, colDark, tr.CalendarModalOff)
 		return
 	}
 	evs := r.calSvc.Events()
 	if len(evs) == 0 {
-		drawCenteredText(r.canvas, r.fonts.regular, body, colDark, "Žádné nadcházející události v dalších 14 dnech")
+		drawCenteredText(r.canvas, r.fonts.regular, body, colDark, tr.CalendarModalEmpty)
 		return
 	}
 
@@ -2703,7 +2683,7 @@ func (r *Renderer) drawCalendarDetailModal(w, top, bottom int, now time.Time) {
 	if len(evs) < maxRows {
 		maxRows = len(evs)
 	}
-	whenW := 148
+	whenW := 196
 	for i := 0; i < maxRows; i++ {
 		ev := evs[i]
 		ry := body.Min.Y + i*rowH
@@ -2715,15 +2695,16 @@ func (r *Renderer) drawCalendarDetailModal(w, top, bottom int, now time.Time) {
 		fillRoundedRect(r.canvas, whenPill, 6, colWhite)
 		drawRoundedRect(r.canvas, whenPill, 6, 1, colBlack)
 		drawCenteredText(r.canvas, r.fonts.bold16, whenPill, colBlack,
-			truncateText(r.fonts.bold16, formatEventWhen(ev, now), whenPill.Dx()-8))
+			truncateText(r.fonts.bold16, formatEventWhenLang(ev, now, lang), whenPill.Dx()-8))
 
 		tx := whenPill.Max.X + 12
 		maxTW := rowR.Max.X - tx - 10
+		summary := localizedEventSummary(ev, tr)
 		if ev.Location != "" {
-			drawText(r.canvas, r.fonts.bold16, tx, rowR.Min.Y+22, colBlack, truncateText(r.fonts.bold16, ev.Summary, maxTW))
+			drawText(r.canvas, r.fonts.bold16, tx, rowR.Min.Y+22, colBlack, truncateText(r.fonts.bold16, summary, maxTW))
 			drawText(r.canvas, r.fonts.small, tx, rowR.Min.Y+40, colDark, truncateText(r.fonts.small, ev.Location, maxTW))
 		} else {
-			drawText(r.canvas, r.fonts.bold16, tx, (rowR.Min.Y+rowR.Max.Y)/2+6, colBlack, truncateText(r.fonts.bold16, ev.Summary, maxTW))
+			drawText(r.canvas, r.fonts.bold16, tx, (rowR.Min.Y+rowR.Max.Y)/2+6, colBlack, truncateText(r.fonts.bold16, summary, maxTW))
 		}
 	}
 }
@@ -2742,13 +2723,14 @@ func (r *Renderer) drawSensorDetailModal(w, top, bottom int, wd config.WidgetCon
 	drawText(r.canvas, r.fonts.bold20, hdr.Min.X+48, hdr.Min.Y+32, colBlack,
 		truncateText(r.fonts.bold20, wd.Label, hdr.Dx()-160))
 
+	tr := r.tr()
 	closeBtn := image.Rect(hdr.Max.X-108, hdr.Min.Y+7, hdr.Max.X-8, hdr.Max.Y-7)
-	drawRoundedButton(r.canvas, closeBtn, 7, r.fonts.bold16, "✕ Zavřít", true)
+	drawRoundedButton(r.canvas, closeBtn, 7, r.fonts.bold16, tr.CloseBtn, true)
 	r.hits = append(r.hits, HitAction{Rect: closeBtn, Type: ActionCloseDetail})
 
 	pts := r.mq.GetHistory(wd.BrokerID, wd.StateTopic, wd.StateJSONPath, 120)
 	curText := "—"
-	ageText := "žádná data"
+	ageText := tr.NoData
 	if tv, ok := r.mq.GetTopic(wd.BrokerID, wd.StateTopic); ok {
 		raw := mqtt.ExtractValue(tv.Payload, wd.StateJSONPath)
 		if f, err := strconv.ParseFloat(raw, 64); err == nil {
@@ -2756,15 +2738,15 @@ func (r *Renderer) drawSensorDetailModal(w, top, bottom int, wd config.WidgetCon
 		} else if raw != "" {
 			curText = raw + suffixUnit(wd.Unit)
 		}
-		ageText = "Aktualizováno " + formatAge(now.Sub(tv.UpdatedAt))
+		ageText = tr.UpdatedPrefix + formatAgeLang(now.Sub(tv.UpdatedAt), tr)
 	}
 
 	trend := r.sensorTrend(wd)
-	trendDesc := "• Stabilní"
+	trendDesc := tr.TrendStable
 	if trend == "▲" {
-		trendDesc = "▲ Stoupá"
+		trendDesc = tr.TrendRising
 	} else if trend == "▼" {
-		trendDesc = "▼ Klesá"
+		trendDesc = tr.TrendFalling
 	}
 
 	// Current value hero row
@@ -2798,9 +2780,9 @@ func (r *Renderer) drawSensorDetailModal(w, top, bottom int, wd config.WidgetCon
 	statGap := 12
 	statW := (face.Dx() - 40 - 2*statGap) / 3
 	stats := []struct{ title, val string }{
-		{"▼ MINIMUM", minStr},
-		{"∅ PRŮMĚR", avgStr},
-		{"▲ MAXIMUM", maxStr},
+		{tr.StatMin, minStr},
+		{tr.StatAvg, avgStr},
+		{tr.StatMax, maxStr},
 	}
 	for i, st := range stats {
 		sx := face.Min.X + 20 + i*(statW+statGap)
@@ -2816,7 +2798,7 @@ func (r *Renderer) drawSensorDetailModal(w, top, bottom int, wd config.WidgetCon
 	plot := image.Rect(face.Min.X+20, statY0+statH+18, face.Max.X-20, face.Max.Y-36)
 	if len(pts) == 0 {
 		r.drawDitheredPlot(plot, nil, 0, 1, 8, 3)
-		drawCenteredText(r.canvas, r.fonts.regular, plot, colDark, "Zatím nejsou v paměti žádné body historie")
+		drawCenteredText(r.canvas, r.fonts.regular, plot, colDark, tr.NoHistory)
 		return
 	}
 	vals := make([]float64, len(pts))
@@ -2826,12 +2808,13 @@ func (r *Renderer) drawSensorDetailModal(w, top, bottom int, wd config.WidgetCon
 	r.drawDitheredPlot(plot, vals, minV, maxV, 8, 3)
 
 	drawText(r.canvas, r.fonts.small, plot.Min.X, face.Max.Y-12, colDark,
-		fmt.Sprintf("Počet vzorků v historii: %d", len(pts)))
+		fmt.Sprintf(tr.SampleCountFmt, len(pts)))
 	drawRightText(r.canvas, r.fonts.small, plot.Max.X, face.Max.Y-12, colDark,
-		fmt.Sprintf("Rozsah grafu: %s – %s%s", formatNumber(minV, wd.Precision), formatNumber(maxV, wd.Precision), suffixUnit(wd.Unit)))
+		fmt.Sprintf(tr.RangeLabelFmt, formatNumber(minV, wd.Precision), formatNumber(maxV, wd.Precision), suffixUnit(wd.Unit)))
 }
 
 func (r *Renderer) drawPinModal(w, top, bottom int) {
+	tr := r.tr()
 	marginX := 40
 	if w > bottom-top {
 		marginX = 24
@@ -2856,7 +2839,7 @@ func (r *Renderer) drawPinModal(w, top, bottom int) {
 	}
 	dispText := masked.String()
 	if r.pinError {
-		dispText = "⚠ CHYBNÝ PIN"
+		dispText = tr.PinWrong
 	}
 
 	keys := []struct {
@@ -2867,7 +2850,7 @@ func (r *Renderer) drawPinModal(w, top, bottom int) {
 		{"1", ActionPinKey, "1"}, {"2", ActionPinKey, "2"}, {"3", ActionPinKey, "3"},
 		{"4", ActionPinKey, "4"}, {"5", ActionPinKey, "5"}, {"6", ActionPinKey, "6"},
 		{"7", ActionPinKey, "7"}, {"8", ActionPinKey, "8"}, {"9", ActionPinKey, "9"},
-		{"✕ Zrušit", ActionPinCancel, ""}, {"0", ActionPinKey, "0"}, {"⌫", ActionPinBackspace, ""},
+		{tr.TimerCancel, ActionPinCancel, ""}, {"0", ActionPinKey, "0"}, {"⌫", ActionPinBackspace, ""},
 	}
 
 	var disp, gridRect image.Rectangle
@@ -2877,13 +2860,13 @@ func (r *Renderer) drawPinModal(w, top, bottom int) {
 		leftMaxX := face.Min.X + (face.Dx()*42)/100
 		drawCenteredText(r.canvas, r.fonts.bold20,
 			image.Rect(leftX, face.Min.Y+80, leftMaxX, face.Min.Y+124),
-			colBlack, "Bezpečnostní PIN")
+			colBlack, tr.PinTitle)
 		disp = image.Rect(leftX+8, face.Min.Y+145, leftMaxX-8, face.Min.Y+215)
 		gridRect = image.Rect(leftMaxX+20, face.Min.Y+20, face.Max.X-24, face.Max.Y-20)
 	} else {
 		drawCenteredText(r.canvas, r.fonts.bold20,
 			image.Rect(face.Min.X+10, face.Min.Y+14, face.Max.X-10, face.Min.Y+48),
-			colBlack, "Zadejte bezpečnostní PIN kód")
+			colBlack, tr.PinPrompt)
 		disp = image.Rect(face.Min.X+36, face.Min.Y+56, face.Max.X-36, face.Min.Y+116)
 		gridRect = image.Rect(face.Min.X+36, face.Min.Y+134, face.Max.X-36, face.Max.Y-22)
 	}
@@ -2979,12 +2962,13 @@ func (r *Renderer) drawStandbyWidgetCard(rect image.Rectangle, wd config.WidgetC
 			truncateText(r.fonts.small, wd.Subtitle, face.Dx()-60))
 	}
 
+	tr := r.tr()
 	valText := "—"
 	if wd.Type == "switch" {
-		valText = "VYPNUTO"
+		valText = tr.SwitchOff
 		if tv, ok := r.mq.GetTopic(wd.BrokerID, wd.StateTopic); ok {
 			if strings.EqualFold(mqtt.ExtractValue(tv.Payload, wd.StateJSONPath), wd.ValueOn) {
-				valText = "● ZAPNUTO"
+				valText = tr.SwitchOnShort
 			}
 		}
 	} else if tv, ok := r.mq.GetTopic(wd.BrokerID, wd.StateTopic); ok {
@@ -3010,18 +2994,20 @@ func (r *Renderer) drawStandbyWidgetCard(rect image.Rectangle, wd config.WidgetC
 }
 
 func (r *Renderer) drawStandbyScreen(w, h int, now time.Time, snap mqtt.ManagerSnapshot, hwStat kindle.Status) {
+	lang := r.lang()
+	tr := r.tr()
 	// Top header bar
 	topH := 52
 	fillRect(r.canvas, image.Rect(0, 0, w, topH), colWhite)
 	fillRect(r.canvas, image.Rect(0, topH-2, w, topH), colBlack)
 
-	drawText(r.canvas, r.fonts.bold16, 16, 32, colBlack, truncateText(r.fonts.bold16, r.cfg.Device.Title+" • Pohotovostní spořič", w-240))
+	drawText(r.canvas, r.fonts.bold16, 16, 32, colBlack, truncateText(r.fonts.bold16, r.cfg.Device.Title+tr.StandbyHeaderSuffix, w-240))
 
 	if hwStat.Battery >= 0 {
 		drawBatteryIcon(r.canvas, w-160, 19, hwStat.Battery, hwStat.Charging)
 		drawText(r.canvas, r.fonts.small, w-126, 31, colDark, fmt.Sprintf("%d%%", hwStat.Battery))
 	}
-	mqttLbl := "OFFLINE"
+	mqttLbl := tr.OfflineLabel
 	if snap.AllConnected {
 		mqttLbl = "● MQTT"
 	}
@@ -3042,8 +3028,8 @@ func (r *Renderer) drawStandbyScreen(w, h int, now time.Time, snap mqtt.ManagerS
 				endCmp = ev.Start.Add(time.Hour)
 			}
 			if !endCmp.Before(now) {
-				nextEvWhen = formatEventWhen(ev, now)
-				nextEvTitle = ev.Summary
+				nextEvWhen = formatEventWhenLang(ev, now, lang)
+				nextEvTitle = localizedEventSummary(ev, tr)
 				if ev.Location != "" {
 					nextEvSub = ev.Location
 				}
@@ -3058,6 +3044,10 @@ func (r *Renderer) drawStandbyScreen(w, h int, now time.Time, snap mqtt.ManagerS
 
 	widgets := r.collectStandbyWidgets()
 	contentBottom := h - 68
+	wsDesc := ""
+	if ws.Available {
+		wsDesc, _ = weather.DescribeWMOLang(ws.WeatherCode, lang)
+	}
 
 	if w > h {
 		// Landscape split layout: Clock/Weather/Calendar on the left, 2x2 sensors on the right
@@ -3072,7 +3062,7 @@ func (r *Renderer) drawStandbyScreen(w, h int, now time.Time, snap mqtt.ManagerS
 
 		dateRect := image.Rect(clockFace.Min.X+10, clockFace.Min.Y+158, clockFace.Max.X-10, clockFace.Min.Y+192)
 		drawCenteredText(r.canvas, r.fonts.bold16, dateRect, colBlack,
-			truncateText(r.fonts.bold16, czechDateLine(now), dateRect.Dx()))
+			truncateText(r.fonts.bold16, formatDateLine(now, lang), dateRect.Dx()))
 
 		infoY := clockFace.Min.Y + 204
 		if ws.Available {
@@ -3081,12 +3071,12 @@ func (r *Renderer) drawStandbyScreen(w, h int, now time.Time, snap mqtt.ManagerS
 			drawRoundedRect(r.canvas, wPill, 8, 1, colSubtleGray)
 			drawText(r.canvas, r.fonts.bold20, wPill.Min.X+14, wPill.Min.Y+36, colBlack,
 				fmt.Sprintf("☀ %.1f °C", ws.Temperature))
-			wDesc := ws.LocationName + " • " + ws.Description
+			wDesc := ws.LocationName + " • " + wsDesc
 			drawText(r.canvas, r.fonts.small, wPill.Min.X+14, wPill.Min.Y+60, colDark,
 				truncateText(r.fonts.small, wDesc, wPill.Dx()-28))
 			if len(ws.Daily) > 0 {
 				drawText(r.canvas, r.fonts.small, wPill.Min.X+14, wPill.Min.Y+80, colDark,
-					fmt.Sprintf("Dnes %.0f° / %.0f° • Srážky %d%%", ws.Daily[0].TempMin, ws.Daily[0].TempMax, ws.Daily[0].PrecipProbMax))
+					fmt.Sprintf(tr.StandbyWeatherSub, ws.Daily[0].TempMin, ws.Daily[0].TempMax, ws.Daily[0].PrecipProbMax))
 			}
 			infoY = wPill.Max.Y + 12
 		}
@@ -3096,7 +3086,7 @@ func (r *Renderer) drawStandbyScreen(w, h int, now time.Time, snap mqtt.ManagerS
 			fillRoundedRect(r.canvas, evPill, 8, colBgCanvas)
 			drawRoundedRect(r.canvas, evPill, 8, 1, colSubtleGray)
 			drawText(r.canvas, r.fonts.small, evPill.Min.X+14, evPill.Min.Y+24, colDark,
-				truncateText(r.fonts.small, "DALŠÍ UDÁLOST • "+nextEvWhen, evPill.Dx()-28))
+				truncateText(r.fonts.small, tr.NextEventPrefix+nextEvWhen, evPill.Dx()-28))
 			drawText(r.canvas, r.fonts.bold16, evPill.Min.X+14, evPill.Min.Y+48, colBlack,
 				truncateText(r.fonts.bold16, nextEvTitle, evPill.Dx()-28))
 			if nextEvSub != "" && evPill.Dy() >= 76 {
@@ -3134,10 +3124,10 @@ func (r *Renderer) drawStandbyScreen(w, h int, now time.Time, snap mqtt.ManagerS
 
 		dateRect := image.Rect(clockFace.Min.X+10, clockFace.Min.Y+140, clockFace.Max.X-10, clockFace.Min.Y+170)
 		drawCenteredText(r.canvas, r.fonts.bold20, dateRect, colBlack,
-			truncateText(r.fonts.bold20, czechDateLine(now), dateRect.Dx()))
+			truncateText(r.fonts.bold20, formatDateLine(now, lang), dateRect.Dx()))
 
 		if ws.Available && nextEvLine != "" {
-			wLine := fmt.Sprintf("☀ %s: %.1f °C • %s", ws.LocationName, ws.Temperature, ws.Description)
+			wLine := fmt.Sprintf("☀ %s: %.1f °C • %s", ws.LocationName, ws.Temperature, wsDesc)
 			if len(ws.Daily) > 0 {
 				wLine += fmt.Sprintf(" (%.0f°/%.0f°)", ws.Daily[0].TempMin, ws.Daily[0].TempMax)
 			}
@@ -3147,9 +3137,9 @@ func (r *Renderer) drawStandbyScreen(w, h int, now time.Time, snap mqtt.ManagerS
 			evRect := image.Rect(clockFace.Min.X+10, clockFace.Min.Y+198, clockFace.Max.X-10, clockFace.Max.Y-6)
 			drawCenteredText(r.canvas, r.fonts.small, evRect, colDark, truncateText(r.fonts.small, "• "+nextEvLine, evRect.Dx()))
 		} else if ws.Available {
-			wLine := fmt.Sprintf("☀ %s: %.1f °C • %s", ws.LocationName, ws.Temperature, ws.Description)
+			wLine := fmt.Sprintf("☀ %s: %.1f °C • %s", ws.LocationName, ws.Temperature, wsDesc)
 			if len(ws.Daily) > 0 {
-				wLine += fmt.Sprintf(" (dnes %.0f° / %.0f°)", ws.Daily[0].TempMin, ws.Daily[0].TempMax)
+				wLine += fmt.Sprintf(" (%s %.0f° / %.0f°)", strings.ToLower(tr.Today), ws.Daily[0].TempMin, ws.Daily[0].TempMax)
 			}
 			wRect := image.Rect(clockFace.Min.X+10, clockFace.Min.Y+178, clockFace.Max.X-10, clockFace.Max.Y-8)
 			drawCenteredText(r.canvas, r.fonts.bold16, wRect, colDark, truncateText(r.fonts.bold16, wLine, wRect.Dx()))
@@ -3182,7 +3172,7 @@ func (r *Renderer) drawStandbyScreen(w, h int, now time.Time, snap mqtt.ManagerS
 	wakePill := image.Rect(18, h-54, w-18, h-16)
 	fillRoundedRect(r.canvas, wakePill, 10, colWhite)
 	drawRoundedRect(r.canvas, wakePill, 10, 2, colBlack)
-	drawCenteredText(r.canvas, r.fonts.bold16, wakePill, colBlack, "Klepněte kamkoliv pro probuzení ovládacího panelu")
+	drawCenteredText(r.canvas, r.fonts.bold16, wakePill, colBlack, tr.StandbyWakePrompt)
 
 	// Entire screen wakes standby
 	r.hits = append(r.hits, HitAction{

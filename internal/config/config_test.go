@@ -218,3 +218,29 @@ func TestExampleConfigValidates(t *testing.T) {
 		t.Fatalf("expected >= 3 pages in config.example.yaml, got %d", len(cfg.Pages))
 	}
 }
+
+func TestNormalizeLanguage(t *testing.T) {
+	cases := map[string]string{
+		"":      "en",
+		"en":    "en",
+		"en-US": "en",
+		"fr":    "en",
+		"cs":    "cs",
+		"cz":    "cs",
+		"cs-CZ": "cs",
+		"Czech": "cs",
+	}
+	for in, want := range cases {
+		if got := NormalizeLanguage(in); got != want {
+			t.Fatalf("NormalizeLanguage(%q) = %q, want %q", in, got, want)
+		}
+	}
+	cfg := DefaultConfig()
+	cfg.Device.Language = "cz"
+	if err := cfg.NormalizeAndValidate(); err != nil {
+		t.Fatalf("NormalizeAndValidate failed: %v", err)
+	}
+	if cfg.Device.Language != "cs" {
+		t.Fatalf("expected normalized language cs, got %q", cfg.Device.Language)
+	}
+}

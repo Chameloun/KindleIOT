@@ -269,6 +269,7 @@ func TestRendererDetailWeatherMacroAndPin(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	cfg.Device.PinCode = "1234"
+	cfg.Device.Language = "cs"
 	cfg.Weather = config.WeatherConfig{
 		Enabled:      true,
 		LocationName: "Brno",
@@ -561,9 +562,10 @@ func TestRendererTimersSchedulesCalendarLandscapeDarkMode(t *testing.T) {
 			},
 		},
 		Device: config.DeviceConfig{
-			Title:  "Chytrý byt",
-			Width:  600,
-			Height: 800,
+			Title:    "Chytrý byt",
+			Width:    600,
+			Height:   800,
+			Language: "cs",
 		},
 		Pages: []config.PageConfig{
 			{
@@ -712,6 +714,7 @@ func TestRendererTimersSchedulesCalendarLandscapeDarkMode(t *testing.T) {
 			Title:       "Chytrý byt",
 			Width:       600,
 			Height:      800,
+			Language:    "cs",
 			Orientation: "landscape",
 			ThemeMode:   "dark",
 		},
@@ -777,4 +780,290 @@ func TestRendererTimersSchedulesCalendarLandscapeDarkMode(t *testing.T) {
 		t.Fatalf("expected 800x600 landscape standby canvas, got %v", imgStandbyLand.Bounds())
 	}
 	maybeSavePreview("ui_standby_landscape.png", imgStandbyLand)
+}
+
+func newMockWeatherServer(now time.Time) *httptest.Server {
+	baseHour := now.Truncate(time.Hour)
+	var hourlyTimes, hourlyTemps, hourlyCodes, hourlyPrecip []string
+	for i := 0; i < 24; i++ {
+		ht := baseHour.Add(time.Duration(i) * time.Hour)
+		hourlyTimes = append(hourlyTimes, fmt.Sprintf("%q", ht.Format("2006-01-02T15:04")))
+		hourlyTemps = append(hourlyTemps, fmt.Sprintf("%.1f", 5.0+float64(i%12)*0.7))
+		hourlyCodes = append(hourlyCodes, "2")
+		hourlyPrecip = append(hourlyPrecip, fmt.Sprintf("%d", (i*10)%75))
+	}
+	var dailyDates, dailyCodes, dailyMax, dailyMin, dailyPrecip []string
+	for d := 0; d < 7; d++ {
+		dd := now.AddDate(0, 0, d)
+		dailyDates = append(dailyDates, fmt.Sprintf("%q", dd.Format("2006-01-02")))
+		dailyCodes = append(dailyCodes, fmt.Sprintf("%d", []int{0, 2, 61, 3, 1, 80, 0}[d]))
+		dailyMax = append(dailyMax, fmt.Sprintf("%.1f", 9.0+float64(d%4)))
+		dailyMin = append(dailyMin, fmt.Sprintf("%.1f", 1.5+float64(d%3)))
+		dailyPrecip = append(dailyPrecip, fmt.Sprintf("%d", []int{10, 25, 80, 35, 15, 65, 5}[d]))
+	}
+	wxJSON := fmt.Sprintf(`{
+		"current": {"temperature_2m": 7.4, "apparent_temperature": 4.9, "relative_humidity_2m": 74, "wind_speed_10m": 11.2, "weather_code": 2},
+		"daily": {"time": [%s], "weather_code": [%s], "temperature_2m_max": [%s], "temperature_2m_min": [%s], "precipitation_probability_max": [%s]},
+		"hourly": {"time": [%s], "temperature_2m": [%s], "weather_code": [%s], "precipitation_probability": [%s]}
+	}`,
+		strings.Join(dailyDates, ","), strings.Join(dailyCodes, ","), strings.Join(dailyMax, ","), strings.Join(dailyMin, ","), strings.Join(dailyPrecip, ","),
+		strings.Join(hourlyTimes, ","), strings.Join(hourlyTemps, ","), strings.Join(hourlyCodes, ","), strings.Join(hourlyPrecip, ","),
+	)
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(wxJSON))
+	}))
+}
+
+func TestRendererI18nEnglishAndCzech(t *testing.T) {
+	now := time.Now()
+	if enDate := formatDateLine(time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC), "en"); strings.Contains(enDate, "Klement") || !strings.Contains(enDate, "Monday") {
+		t.Fatalf("expected English date without Czech nameday, got %q", enDate)
+	}
+	if csDate := formatDateLine(time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC), "cs"); !strings.Contains(csDate, "Klement") || !strings.Contains(csDate, "Pondělí") {
+		t.Fatalf("expected Czech date with Klement nameday, got %q", csDate)
+	}
+
+	// Main EN dashboard preview
+	cfgMain := config.DefaultConfig()
+	cfgMain.Device.Language = "en"
+	mqMain := mqtt.NewManager(cfgMain, nil, mqtt.CommandHandler{})
+	mqMain.SetLocalValue("", "home/livingroom/sensor", `{"temperature": 22.7, "humidity": 46}`)
+	mqMain.SetLocalValue("", "zigbee2mqtt/living_light", `{"state": "ON"}`)
+	rMain, err := NewRenderer(cfgMain, mqMain, kindle.NewSystem(), Controller{})
+	if err != nil {
+		t.Fatalf("NewRenderer EN main failed: %v", err)
+	}
+	imgMain, _ := rMain.Render()
+	maybeSavePreview("en_main.png", imgMain)
+
+	// Weather + Calendar EN servers
+	wxTS := newMockWeatherServer(now)
+	defer wxTS.Close()
+
+	ev1Start := now.Add(90 * time.Minute)
+	ev1End := ev1Start.Add(60 * time.Minute)
+	ev2Day := now.AddDate(0, 0, 1)
+	ev3Start := now.AddDate(0, 0, 2)
+	icsBody := strings.Join([]string{
+		"BEGIN:VCALENDAR",
+		"VERSION:2.0",
+		"BEGIN:VEVENT",
+		"SUMMARY:Team Standup Sync",
+		"LOCATION:Room 3A",
+		"DTSTART:" + ev1Start.Format("20060102T150405"),
+		"DTEND:" + ev1End.Format("20060102T150405"),
+		"END:VEVENT",
+		"BEGIN:VEVENT",
+		"SUMMARY:Recycling Pickup",
+		"DTSTART;VALUE=DATE:" + ev2Day.Format("20060102"),
+		"DTEND;VALUE=DATE:" + ev2Day.AddDate(0, 0, 1).Format("20060102"),
+		"END:VEVENT",
+		"BEGIN:VEVENT",
+		"SUMMARY:Dentist Checkup",
+		"LOCATION:City Clinic",
+		"DTSTART:" + ev3Start.Format("20060102") + "T093000",
+		"DTEND:" + ev3Start.Format("20060102") + "T101500",
+		"END:VEVENT",
+		"END:VCALENDAR",
+	}, "\r\n")
+	calTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(icsBody))
+	}))
+	defer calTS.Close()
+
+	cfg := &config.Config{
+		MQTT:    config.MQTTConfig{Broker: "tcp://127.0.0.1:1883"},
+		Weather: config.WeatherConfig{Enabled: true, LocationName: "Prague", Latitude: 50.0755, Longitude: 14.4378},
+		Calendar: config.CalendarConfig{
+			Enabled: true,
+			URLs:    []string{calTS.URL},
+		},
+		Schedules: []config.ScheduleConfig{
+			{ID: "morning_on", Name: "Morning Light", Enabled: true, Hour: 7, Minute: 30, WidgetID: "sw1", State: "ON"},
+		},
+		Device: config.DeviceConfig{
+			Title:    "Smart Home",
+			Width:    600,
+			Height:   800,
+			Language: "en",
+			PinCode:  "1234",
+		},
+		Pages: []config.PageConfig{
+			{
+				ID:      "overview",
+				Title:   "Overview",
+				Columns: 2,
+				Widgets: []config.WidgetConfig{
+					{ID: "sw1", Type: "switch", Label: "Floor Lamp", Subtitle: "Living Room", StateTopic: "local/switch/sw1", ValueOn: "ON", ValueOff: "OFF", PayloadOn: "ON", PayloadOff: "OFF", ShowInStandby: true},
+					{ID: "t1", Type: "timer", Label: "Lamp Timer", TargetWidgetID: "sw1", TargetState: "OFF", TimerPresets: []int{5, 15, 30}},
+					{ID: "wx", Type: "weather", Label: "Outdoor Weather", Span: 2},
+					{ID: "cal", Type: "calendar", Label: "Family Calendar", Span: 2},
+				},
+			},
+			{
+				ID:      "charts",
+				Title:   "Charts",
+				Columns: 2,
+				Widgets: []config.WidgetConfig{
+					{ID: "g1", Type: "gauge", Label: "Power", StateTopic: "home/power", Min: 0, Max: 3000, Unit: "W"},
+					{ID: "c1", Type: "chart", Label: "Temperature", StateTopic: "home/temp", Unit: "°C", Precision: 1},
+				},
+			},
+			{
+				ID:    "map",
+				Title: "Floorplan",
+				Type:  "floorplan",
+				Floorplan: &config.FloorplanConfig{
+					Shapes: []config.FloorShape{
+						{ID: "r1", Kind: "room", Label: "Living Room", X: 50, Y: 50, W: 450, H: 400},
+						{ID: "w1", Kind: "wall", X: 50, Y: 500, X2: 900, Y2: 500},
+						{ID: "d1", Kind: "door", X: 400, Y: 500, X2: 500, Y2: 500},
+						{ID: "txt1", Kind: "text", Label: "Ground Floor", X: 600, Y: 100},
+					},
+					Pins: []config.FloorPin{
+						{ID: "p1", X: 250, Y: 250, Widget: config.WidgetConfig{ID: "fp_temp", Type: "sensor", Label: "Temp", StateTopic: "home/temp", Unit: "°C"}},
+						{ID: "p2", X: 700, Y: 300, Widget: config.WidgetConfig{ID: "fp_light", Type: "switch", Label: "Light", StateTopic: "local/switch/sw1", ValueOn: "ON", ValueOff: "OFF"}},
+					},
+				},
+			},
+		},
+	}
+	if err := cfg.NormalizeAndValidate(); err != nil {
+		t.Fatalf("NormalizeAndValidate EN failed: %v", err)
+	}
+
+	mq := mqtt.NewManager(cfg, nil, mqtt.CommandHandler{})
+	mq.SetLocalValue("", "local/switch/sw1", "ON")
+	mq.SetLocalValue("", "home/livingroom/temp", "22.4")
+	mq.SetLocalValue("", "home/power", "1850")
+	mq.SetLocalValue("", "home/temp", "20.2")
+	mq.SetLocalValue("", "home/temp", "21.6")
+
+	r, err := NewRenderer(cfg, mq, kindle.NewSystem(), Controller{})
+	if err != nil {
+		t.Fatalf("NewRenderer EN failed: %v", err)
+	}
+	wxSvc := weather.NewService(cfg.Weather, nil)
+	wxSvc.SetEndpoint(wxTS.URL, wxTS.Client())
+	wxSvc.FetchNow()
+	r.SetWeatherService(wxSvc)
+
+	calSvc := calendar.NewService(cfg.Calendar, nil)
+	calSvc.SetHTTPClient(calTS.Client())
+	calSvc.FetchNow()
+	r.SetCalendarService(calSvc)
+
+	_, _ = r.Render()
+	tx, ty, ok := findHitCenter(r, ActionTimerStart)
+	if !ok || !r.HandleTap(tx, ty) {
+		t.Fatalf("expected EN timer preset tap to start timer")
+	}
+	imgTimer, _ := r.Render()
+	maybeSavePreview("en_timer_calendar.png", imgTimer)
+
+	r.mu.Lock()
+	tm := r.activeTimers["t1"]
+	r.mu.Unlock()
+	if ch, woke := r.TickTimersAndSchedules(tm.EndsAt.Add(2 * time.Second)); !ch || !woke {
+		t.Fatalf("expected EN timer expiry")
+	}
+	r.mu.Lock()
+	noticeTimer := r.noticeText
+	r.mu.Unlock()
+	if !strings.HasPrefix(noticeTimer, "✓ Timer finished:") {
+		t.Fatalf("expected English timer notice, got %q", noticeTimer)
+	}
+	t0730 := time.Date(2026, 11, 23, 7, 30, 5, 0, time.Local)
+	if ch, _ := r.TickTimersAndSchedules(t0730); !ch {
+		t.Fatalf("expected EN schedule fire")
+	}
+	r.mu.Lock()
+	noticeSched := r.noticeText
+	r.mu.Unlock()
+	if !strings.HasPrefix(noticeSched, "● Schedule triggered:") {
+		t.Fatalf("expected English schedule notice, got %q", noticeSched)
+	}
+
+	// Open EN Weather Detail -> en_weather_detail.png
+	_, _ = r.Render()
+	wxX, wxY, _ := findHitCenter(r, ActionOpenWeatherDetail)
+	r.HandleTap(wxX, wxY)
+	imgWx, _ := r.Render()
+	maybeSavePreview("en_weather_detail.png", imgWx)
+	cx, cy, _ := findHitCenter(r, ActionCloseDetail)
+	r.HandleTap(cx, cy)
+
+	// Open EN Calendar Detail -> en_calendar_detail.png
+	_, _ = r.Render()
+	calX, calY, _ := findHitCenter(r, ActionOpenCalendarDetail)
+	r.HandleTap(calX, calY)
+	imgCal, _ := r.Render()
+	maybeSavePreview("en_calendar_detail.png", imgCal)
+	cx, cy, _ = findHitCenter(r, ActionCloseDetail)
+	r.HandleTap(cx, cy)
+
+	// Charts & Floorplan & PIN EN previews
+	r.mu.Lock()
+	r.activePage = 1
+	r.mu.Unlock()
+	imgCharts, _ := r.Render()
+	maybeSavePreview("en_charts.png", imgCharts)
+
+	r.mu.Lock()
+	r.activePage = 2
+	r.mu.Unlock()
+	imgFP, _ := r.Render()
+	maybeSavePreview("en_floorplan.png", imgFP)
+
+	r.mu.Lock()
+	r.pinModalOpen = true
+	r.mu.Unlock()
+	imgPin, _ := r.Render()
+	maybeSavePreview("en_pin.png", imgPin)
+	r.mu.Lock()
+	r.pinModalOpen = false
+	r.mu.Unlock()
+
+	// Landscape Dark Mode + Standby EN previews
+	cfgLand := &config.Config{
+		MQTT:     cfg.MQTT,
+		Weather:  cfg.Weather,
+		Calendar: cfg.Calendar,
+		Device: config.DeviceConfig{
+			Title:       "Smart Home",
+			Width:       600,
+			Height:      800,
+			Language:    "en",
+			Orientation: "landscape",
+			ThemeMode:   "dark",
+		},
+		Pages: []config.PageConfig{
+			{
+				ID:      "overview",
+				Title:   "Overview",
+				Columns: 3,
+				Widgets: []config.WidgetConfig{
+					cfg.Pages[0].Widgets[0],
+					cfg.Pages[0].Widgets[1],
+					{ID: "living_temp", Type: "sensor", Label: "Living Room", StateTopic: "home/livingroom/temp", Unit: "°C", ShowInStandby: true},
+					{ID: "power_gauge", Type: "gauge", Label: "Power", StateTopic: "home/livingroom/temp", Min: 0, Max: 50, Unit: "°C", ShowInStandby: true},
+					cfg.Pages[0].Widgets[2],
+					{ID: "cal", Type: "calendar", Label: "Calendar", Span: 3},
+				},
+			},
+		},
+	}
+	if err := cfgLand.NormalizeAndValidate(); err != nil {
+		t.Fatalf("cfgLand EN NormalizeAndValidate failed: %v", err)
+	}
+	r.UpdateConfig(cfgLand)
+	imgLand, _ := r.Render()
+	maybeSavePreview("en_landscape_dark.png", imgLand)
+
+	cfgLandLight := *cfgLand
+	cfgLandLight.Device.ThemeMode = "light"
+	r.UpdateConfig(&cfgLandLight)
+	r.SetStandby(true)
+	imgStandby, _ := r.Render()
+	maybeSavePreview("en_standby_landscape.png", imgStandby)
 }

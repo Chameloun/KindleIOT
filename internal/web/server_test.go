@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"kindleiot/internal/config"
@@ -86,6 +87,7 @@ func TestWebEndpoints(t *testing.T) {
 		t.Fatalf("unmarshal /api/config/json failed: %v", err)
 	}
 	gotCfg.Device.Title = "Updated Panel"
+	gotCfg.Device.Language = "cs"
 	rawJSON, _ := json.Marshal(gotCfg)
 
 	// POST /api/config/json
@@ -96,7 +98,16 @@ func TestWebEndpoints(t *testing.T) {
 		t.Fatalf("unexpected POST /api/config/json: %d (%s)", rec.Code, rec.Body.String())
 	}
 	reloaded, err := config.Load(cfgPath)
-	if err != nil || reloaded.Device.Title != "Updated Panel" {
-		t.Fatalf("expected updated config saved to yaml, got err=%v title=%q", err, reloaded.Device.Title)
+	if err != nil || reloaded.Device.Title != "Updated Panel" || reloaded.Device.Language != "cs" {
+		t.Fatalf("expected updated config saved to yaml, got err=%v title=%q lang=%q", err, reloaded.Device.Title, reloaded.Device.Language)
+	}
+
+	// GET /i18n.js serves embedded localization bundle
+	req = httptest.NewRequest(http.MethodGet, "/i18n.js", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, "en:") || !strings.Contains(body, "cs:") {
+		t.Fatalf("expected /i18n.js HTTP 200 with en/cs dicts, got code=%d len=%d", rec.Code, len(body))
 	}
 }

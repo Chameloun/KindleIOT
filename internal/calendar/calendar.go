@@ -356,9 +356,6 @@ func extractParam(params, key string) string {
 }
 
 func expandVEvent(raw *rawVEvent, startOfToday, endOfWindow time.Time, loc *time.Location) []Event {
-	if strings.TrimSpace(raw.summary) == "" {
-		raw.summary = "Událost"
-	}
 	dtStart, allDay, ok := parseICSTime(raw.dtStartRaw, raw.dtStartPar, loc)
 	if !ok {
 		return nil
