@@ -317,6 +317,33 @@ func (r *Renderer) tr() uiStrings {
 	return stringsForLang(r.lang())
 }
 
+// visiblePageIndices returns all page indices where Hidden == false, preserving config order.
+func (r *Renderer) visiblePageIndices() []int {
+	if r.cfg == nil {
+		return nil
+	}
+	var vis []int
+	for i, p := range r.cfg.Pages {
+		if !p.Hidden {
+			vis = append(vis, i)
+		}
+	}
+	return vis
+}
+
+func (r *Renderer) resolveActivePageLocked() (int, bool) {
+	vis := r.visiblePageIndices()
+	if len(vis) == 0 {
+		return -1, false
+	}
+	if r.activePage >= 0 && r.activePage < len(r.cfg.Pages) && !r.cfg.Pages[r.activePage].Hidden {
+		return r.activePage, true
+	}
+	r.activePage = vis[0]
+	r.subPage = 0
+	return r.activePage, true
+}
+
 // UpdateConfig hot-swaps the configuration cleanly.
 func (r *Renderer) UpdateConfig(cfg *config.Config) {
 	r.mu.Lock()
@@ -327,10 +354,7 @@ func (r *Renderer) UpdateConfig(cfg *config.Config) {
 	}
 	r.cfg = cfg
 	r.darkOverride = nil
-	if r.activePage >= len(cfg.Pages) {
-		r.activePage = 0
-		r.subPage = 0
-	}
+	r.resolveActivePageLocked()
 }
 
 func (r *Renderer) isDarkModeLocked(now time.Time) bool {
@@ -618,10 +642,12 @@ func (r *Renderer) drawBanner(w, y int, msg string, isError bool) {
 }
 
 func (r *Renderer) drawPageContent(w, top, bottom int, now time.Time) {
-	if len(r.cfg.Pages) == 0 {
+	pageIdx, ok := r.resolveActivePageLocked()
+	if !ok {
+		drawCenteredText(r.canvas, r.fonts.regular, image.Rect(14, top, w-14, bottom), colDark, r.tr().AllPagesHidden)
 		return
 	}
-	page := r.cfg.Pages[r.activePage]
+	page := r.cfg.Pages[pageIdx]
 	if page.Type == "floorplan" {
 		r.drawFloorplanPage(w, top, bottom, page, now)
 		return
@@ -1400,17 +1426,19 @@ func (r *Renderer) drawBottomTabs(w, h, bottomH int) {
 	fillRect(r.canvas, image.Rect(0, y0, w, h), colWhite)
 	fillRect(r.canvas, image.Rect(0, y0, w, y0+2), colBlack)
 
-	n := len(r.cfg.Pages)
+	vis := r.visiblePageIndices()
+	n := len(vis)
 	if n == 0 {
 		return
 	}
 	padX := 14
 	gap := 10
 	tabW := (w - 2*padX - (n-1)*gap) / n
-	for i, p := range r.cfg.Pages {
-		x0 := padX + i*(tabW+gap)
+	for pos, pageIdx := range vis {
+		p := r.cfg.Pages[pageIdx]
+		x0 := padX + pos*(tabW+gap)
 		tabR := image.Rect(x0, y0+9, x0+tabW, h-9)
-		active := i == r.activePage
+		active := pageIdx == r.activePage
 		lbl := p.Title
 		if active {
 			lbl = "● " + lbl
@@ -1419,7 +1447,7 @@ func (r *Renderer) drawBottomTabs(w, h, bottomH int) {
 		r.hits = append(r.hits, HitAction{
 			Rect:    tabR,
 			Type:    ActionSelectPage,
-			PageIdx: i,
+			PageIdx: pageIdx,
 		})
 	}
 }
@@ -1474,7 +1502,11 @@ func (r *Renderer) requiresPinLocked(h HitAction, now time.Time) bool {
 func (r *Renderer) dispatchActionLocked(matched HitAction, now time.Time) bool {
 	switch matched.Type {
 	case ActionSelectPage:
-		r.activePage = matched.PageIdx
+		if matched.PageIdx >= 0 && matched.PageIdx < len(r.cfg.Pages) && !r.cfg.Pages[matched.PageIdx].Hidden {
+			r.activePage = matched.PageIdx
+		} else {
+			r.resolveActivePageLocked()
+		}
 		r.subPage = 0
 		r.confirmID = ""
 		r.detailWidget = nil

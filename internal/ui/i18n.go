@@ -50,6 +50,7 @@ type uiStrings struct {
 	MinLabel            string
 	MaxLabel            string
 	EmptyFloorplan      string
+	AllPagesHidden      string
 	SendErrPrefix       string
 	AgoSec              string
 	AgoMin              string
@@ -146,6 +147,7 @@ var langEN = uiStrings{
 	MinLabel:            "▼ min %s%s",
 	MaxLabel:            "▲ max %s%s",
 	EmptyFloorplan:      "Empty floorplan — draw rooms in the web editor",
+	AllPagesHidden:      "All pages are hidden in web settings",
 	SendErrPrefix:       "Publish error: ",
 	AgoSec:              "%ds ago",
 	AgoMin:              "%dm ago",
@@ -242,6 +244,7 @@ var langCS = uiStrings{
 	MinLabel:            "▼ min %s%s",
 	MaxLabel:            "▲ max %s%s",
 	EmptyFloorplan:      "Prázdný půdorys — nakresli místnosti ve webovém editoru",
+	AllPagesHidden:      "Všechny stránky jsou ve webovém editoru skryté",
 	SendErrPrefix:       "Chyba odeslání: ",
 	AgoSec:              "před %ds",
 	AgoMin:              "před %dm",

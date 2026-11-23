@@ -286,3 +286,34 @@ pages:
 		t.Fatalf("expected precision 2 and clamped 6, got %d / %d", ws[2].EffectivePrecision(), ws[2].EffectiveSecondaryPrecision())
 	}
 }
+
+func TestPageHiddenAndOrderPreserved(t *testing.T) {
+	raw := []byte(`
+mqtt:
+  broker: tcp://10.0.0.5:1883
+pages:
+  - id: p1
+    title: First Hidden
+    hidden: true
+    widgets:
+      - type: sensor
+        label: Temp
+        state_topic: t/1
+  - id: p2
+    title: Second Visible
+    widgets:
+      - type: switch
+        label: Light
+        state_topic: local/switch/sw1
+`)
+	cfg, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(cfg.Pages) != 2 || !cfg.Pages[0].Hidden || cfg.Pages[1].Hidden {
+		t.Fatalf("expected page 0 hidden and page 1 visible, got %+v", cfg.Pages)
+	}
+	if cfg.Pages[0].ID != "p1" || cfg.Pages[1].ID != "p2" {
+		t.Fatalf("page order not preserved: %+v", cfg.Pages)
+	}
+}

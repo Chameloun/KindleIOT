@@ -157,6 +157,7 @@
       font-weight: 700; font-size: 12px; border-radius: 2px; text-align: center; cursor: pointer;
     }
     .k-tab-btn.active { background: #000; color: #fff; }
+    .k-tab-btn.hidden-tab { opacity: 0.45; border-style: dashed; text-decoration: line-through; }
 
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .form-grid .full { grid-column: 1 / -1; }
@@ -175,6 +176,17 @@
       padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 6px; cursor: pointer;
     }
     .page-row.active { border-color: #111; background: #f3f4f6; font-weight: 700; }
+    .page-row.hidden-page { opacity: 0.65; border-style: dashed; }
+    .page-row.page-drop-before { border-top: 3px solid #111; }
+    .page-row-main { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
+    .page-drag-handle { cursor: grab; color: var(--muted); user-select: none; font-size: 13px; flex-shrink: 0; }
+    .page-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .page-hidden-tag {
+      font-size: 10px; padding: 1px 5px; border-radius: 4px;
+      background: #e5e7eb; color: #4b5563; font-weight: 600; flex-shrink: 0;
+    }
+    .page-row-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+    .page-row-actions button { padding: 2px 6px; font-size: 11px; min-width: 24px; }
 
     .opt-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; margin-bottom: 6px; }
 
@@ -1354,6 +1366,43 @@
       renderDesigner();
     }
 
+    let dragPageIdx = -1;
+
+    function movePage(fromIdx, toIdx) {
+      if (!cfg?.pages || fromIdx === toIdx) return;
+      if (fromIdx < 0 || fromIdx >= cfg.pages.length || toIdx < 0 || toIdx >= cfg.pages.length) return;
+      const [moved] = cfg.pages.splice(fromIdx, 1);
+      cfg.pages.splice(toIdx, 0, moved);
+      if (activePageIdx === fromIdx) {
+        activePageIdx = toIdx;
+      } else if (fromIdx < activePageIdx && toIdx >= activePageIdx) {
+        activePageIdx--;
+      } else if (fromIdx > activePageIdx && toIdx <= activePageIdx) {
+        activePageIdx++;
+      }
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function togglePageHidden(idx) {
+      const p = cfg?.pages?.[idx];
+      if (!p) return;
+      if (p.hidden) delete p.hidden;
+      else p.hidden = true;
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function setActivePageHidden(hidden) {
+      const p = cfg?.pages?.[activePageIdx];
+      if (!p) return;
+      if (hidden) p.hidden = true;
+      else delete p.hidden;
+      markDirty(true);
+      renderPagesList();
+      renderKindleTabs();
+    }
+
     function setPageType(newType) {
       const p = cfg.pages[activePageIdx];
       p.type = newType;
@@ -1398,9 +1447,44 @@
     function renderPagesList() {
       const list = document.getElementById('pagesList');
       list.innerHTML = '';
+      const allHidden = cfg.pages.length > 0 && cfg.pages.every(pg => !!pg.hidden);
+      if (allHidden) {
+        const warn = document.createElement('div');
+        warn.className = 'hint';
+        warn.style.color = '#b45309';
+        warn.style.marginBottom = '8px';
+        warn.textContent = t('pages.allHiddenWarn');
+        list.appendChild(warn);
+      }
+
       cfg.pages.forEach((p, i) => {
         const row = document.createElement('div');
-        row.className = 'page-row' + (i === activePageIdx ? ' active' : '');
+        row.className = 'page-row' + (i === activePageIdx ? ' active' : '') + (p.hidden ? ' hidden-page' : '');
+        row.draggable = true;
+        row.ondragstart = (ev) => {
+          dragPageIdx = i;
+          ev.dataTransfer.effectAllowed = 'move';
+          ev.dataTransfer.setData('text/plain', 'page:' + i);
+        };
+        row.ondragover = (ev) => {
+          if (dragPageIdx < 0) return;
+          ev.preventDefault();
+          document.querySelectorAll('#pagesList .page-row').forEach(r => r.classList.remove('page-drop-before'));
+          row.classList.add('page-drop-before');
+        };
+        row.ondragleave = () => row.classList.remove('page-drop-before');
+        row.ondrop = (ev) => {
+          if (dragPageIdx < 0) return;
+          ev.preventDefault();
+          row.classList.remove('page-drop-before');
+          const from = dragPageIdx;
+          dragPageIdx = -1;
+          movePage(from, i);
+        };
+        row.ondragend = () => {
+          dragPageIdx = -1;
+          document.querySelectorAll('#pagesList .page-row').forEach(r => r.classList.remove('page-drop-before'));
+        };
         row.onclick = () => {
           activePageIdx = i;
           selectFirstItemOnPage();
@@ -1408,8 +1492,20 @@
         };
         const isFP = (p.type || 'grid') === 'floorplan';
         const cnt = isFP ? (p.floorplan?.pins?.length || 0) + t('pages.pointsSuffix') : (p.widgets?.length || 0);
-        row.innerHTML = `<span>${isFP ? '🗺 ' : ''}${escapeHtml(p.title)} (${escapeHtml(cnt)})</span>` +
-          (cfg.pages.length > 1 ? `<button class="danger sm" onclick="event.stopPropagation(); deletePage(${i})">✕</button>` : '');
+        const visIcon = p.hidden ? '◌' : '👁';
+        const visTitle = p.hidden ? t('pages.showBtn') : t('pages.hideBtn');
+        row.innerHTML = `
+          <div class="page-row-main">
+            <span class="page-drag-handle" title="Drag">⋮⋮</span>
+            <span class="page-row-title">${isFP ? '🗺 ' : ''}${escapeHtml(p.title)} (${escapeHtml(cnt)})</span>
+            ${p.hidden ? `<span class="page-hidden-tag">${escapeHtml(t('pages.hiddenBadge'))}</span>` : ''}
+          </div>
+          <div class="page-row-actions">
+            <button type="button" class="secondary sm" title="${escapeAttr(t('pages.moveUp'))}" ${i === 0 ? 'disabled' : ''} onclick="event.stopPropagation(); movePage(${i}, ${i - 1})">↑</button>
+            <button type="button" class="secondary sm" title="${escapeAttr(t('pages.moveDown'))}" ${i === cfg.pages.length - 1 ? 'disabled' : ''} onclick="event.stopPropagation(); movePage(${i}, ${i + 1})">↓</button>
+            <button type="button" class="secondary sm" title="${escapeAttr(visTitle)}" onclick="event.stopPropagation(); togglePageHidden(${i})">${visIcon}</button>
+            ${cfg.pages.length > 1 ? `<button type="button" class="danger sm" onclick="event.stopPropagation(); deletePage(${i})">✕</button>` : ''}
+          </div>`;
         list.appendChild(row);
       });
 
@@ -1434,17 +1530,21 @@
               <option value="1" ${cur.columns===1?'selected':''}>${escapeHtml(t('pages.cols1'))}</option>
             </select>
           </label>` : ''}
+          <label class="check-row full">
+            <input type="checkbox" ${cur.hidden ? 'checked' : ''} onchange="setActivePageHidden(this.checked)" />
+            ${escapeHtml(t('pages.propHidden'))}
+          </label>
         </div>
       `;
     }
 
     function renderPagesListHeader() {
-      const rows = document.querySelectorAll('#pagesList .page-row span');
+      const titles = document.querySelectorAll('#pagesList .page-row .page-row-title');
       cfg.pages.forEach((p, i) => {
-        if (!rows[i]) return;
+        if (!titles[i]) return;
         const isFP = (p.type || 'grid') === 'floorplan';
         const cnt = isFP ? (p.floorplan?.pins?.length || 0) + t('pages.pointsSuffix') : (p.widgets?.length || 0);
-        rows[i].textContent = `${isFP ? '🗺 ' : ''}${p.title} (${cnt})`;
+        titles[i].textContent = `${isFP ? '🗺 ' : ''}${p.title} (${cnt})`;
       });
     }
 
@@ -1453,7 +1553,7 @@
       tabs.innerHTML = '';
       cfg.pages.forEach((p, i) => {
         const b = document.createElement('div');
-        b.className = 'k-tab-btn' + (i === activePageIdx ? ' active' : '');
+        b.className = 'k-tab-btn' + (i === activePageIdx ? ' active' : '') + (p.hidden ? ' hidden-tab' : '');
         b.textContent = p.title;
         b.onclick = () => {
           activePageIdx = i;

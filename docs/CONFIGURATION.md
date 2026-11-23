@@ -161,8 +161,9 @@ web:
 ```
 
 Each entry in `pages` has:
-- `id`, `title`: Tab identifier and bottom bar label (up to 4 tabs per sub-page; `◀` / `▶` pagination appears automatically if you have > 4 pages).
+- `id`, `title`: Tab identifier and bottom bar label.
 - `type`: `grid` (default) or `floorplan`.
+- `hidden`: `true` omits the page from the Kindle bottom tab bar while keeping its MQTT topics, alerts, standby widgets, schedules, and HomeKit accessories active (`false` default).
 - `columns`: `1`, `2`, or `3` (clamped `1..3`; 3 columns works great in `landscape`).
 - `widgets`: List of widgets (cards with `span` `1..columns`).
 - `floorplan`: When `type: floorplan`, contains `shapes` (`kind: room | wall | door | text` in normalized `0..1000` coordinates) and `pins` (`x`, `y` in `0..1000` wrapping any `WidgetConfig`).

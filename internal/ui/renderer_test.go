@@ -1110,3 +1110,93 @@ func TestFormatNumberAndSensorPrecision(t *testing.T) {
 		t.Fatalf("secondary precision 0 = %q, want 28 %%", got)
 	}
 }
+
+func TestRendererHiddenPagesAndOrdering(t *testing.T) {
+	cfg := &config.Config{
+		MQTT: config.MQTTConfig{Broker: "tcp://127.0.0.1:1883"},
+		Device: config.DeviceConfig{
+			Title:       "Panel",
+			Width:       600,
+			Height:      800,
+			Language:    "en",
+			Orientation: "portrait",
+		},
+		Pages: []config.PageConfig{
+			{
+				ID:      "p0",
+				Title:   "Hidden First",
+				Hidden:  true,
+				Columns: 2,
+				Widgets: []config.WidgetConfig{
+					{ID: "w0", Type: "sensor", Label: "Secret", StateTopic: "t/secret", Unit: "°C"},
+				},
+			},
+			{
+				ID:      "p1",
+				Title:   "Visible One",
+				Columns: 2,
+				Widgets: []config.WidgetConfig{
+					{ID: "w1", Type: "sensor", Label: "Room", StateTopic: "t/room", Unit: "°C"},
+				},
+			},
+			{
+				ID:      "p2",
+				Title:   "Visible Two",
+				Columns: 2,
+				Widgets: []config.WidgetConfig{
+					{ID: "w2", Type: "switch", Label: "Lamp", StateTopic: "local/switch/w2", ValueOn: "ON", ValueOff: "OFF"},
+				},
+			},
+		},
+	}
+	if err := cfg.NormalizeAndValidate(); err != nil {
+		t.Fatalf("NormalizeAndValidate failed: %v", err)
+	}
+	mq := mqtt.NewManager(cfg, nil, mqtt.CommandHandler{})
+	r, err := NewRenderer(cfg, mq, &kindle.System{}, Controller{})
+	if err != nil {
+		t.Fatalf("NewRenderer failed: %v", err)
+	}
+
+	// Render should auto-select first visible page (index 1) and show only tabs [1, 2].
+	img, _ := r.Render()
+	if img == nil {
+		t.Fatalf("expected non-nil image")
+	}
+	if r.activePage != 1 {
+		t.Fatalf("expected activePage to skip hidden page 0 and resolve to 1, got %d", r.activePage)
+	}
+	var tabHits []HitAction
+	for _, h := range r.hits {
+		if h.Type == ActionSelectPage {
+			tabHits = append(tabHits, h)
+		}
+	}
+	if len(tabHits) != 2 || tabHits[0].PageIdx != 1 || tabHits[1].PageIdx != 2 {
+		t.Fatalf("expected visible tab PageIdx [1, 2], got %+v", tabHits)
+	}
+
+	// Tap second visible tab -> switches to page 2.
+	cx := (tabHits[1].Rect.Min.X + tabHits[1].Rect.Max.X) / 2
+	cy := (tabHits[1].Rect.Min.Y + tabHits[1].Rect.Max.Y) / 2
+	if !r.HandleTap(cx, cy) || r.activePage != 2 {
+		t.Fatalf("expected tap on second visible tab to switch to page 2, activePage=%d", r.activePage)
+	}
+
+	// Hide remaining visible pages -> Render should handle gracefully without panic and emit 0 tab hits.
+	cfgAllHidden := *cfg
+	cfgAllHidden.Pages = append([]config.PageConfig(nil), cfg.Pages...)
+	for i := range cfgAllHidden.Pages {
+		cfgAllHidden.Pages[i].Hidden = true
+	}
+	r.UpdateConfig(&cfgAllHidden)
+	imgEmpty, _ := r.Render()
+	if imgEmpty == nil {
+		t.Fatalf("expected non-nil image even when all pages hidden")
+	}
+	for _, h := range r.hits {
+		if h.Type == ActionSelectPage {
+			t.Fatalf("expected zero tab hits when all pages are hidden, got %+v", h)
+		}
+	}
+}

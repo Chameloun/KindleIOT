@@ -175,6 +175,7 @@ type PageConfig struct {
 	ID        string           `yaml:"id" json:"id"`
 	Title     string           `yaml:"title" json:"title"`
 	Type      string           `yaml:"type,omitempty" json:"type,omitempty"` // grid (default), floorplan
+	Hidden    bool             `yaml:"hidden,omitempty" json:"hidden,omitempty"`
 	Columns   int              `yaml:"columns" json:"columns"`
 	Widgets   []WidgetConfig   `yaml:"widgets" json:"widgets"`
 	Floorplan *FloorplanConfig `yaml:"floorplan,omitempty" json:"floorplan,omitempty"`
