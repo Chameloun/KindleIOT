@@ -6,6 +6,7 @@
 [![Licence: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
 [![Go verze](https://img.shields.io/github/go-mod/go-version/Chameloun/KindleIOT)](go.mod)
 [![Platforma](https://img.shields.io/badge/Kindle-KT4%20armhf%20%7C%20KPM%20%2F%20Scriptlets-lightgrey.svg)](docs/DEPLOYMENT.md)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Podpo%C5%99it%20na%20Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/chameloun)
 
 [🇬🇧 English](README.md) · [🇨🇿 Česky](README.cs.md)
 
@@ -84,6 +85,14 @@ make build-local
 - [Architektura a přehled kódu](docs/ARCHITECTURE.md) — Blokové schéma, Go balíčky, renderovací pipeline pro e-ink a HTTP API webového serveru.
 - [Přispívání do projektu](CONTRIBUTING.md) — Spouštění testů, generování náhledů PNG a technická omezení pro fonty a ARMv7 jádro.
 - [Licence třetích stran](THIRD_PARTY_NOTICES.md) — Přibalené fonty, kořenové CA certifikáty a Go knihovny.
+
+---
+
+## Podpora
+
+KindleIOT je zdarma jako open-source pod licencí MIT. Pokud vám pomohl vdechnout starému Kindlu nový život na zdi, můžete další vývoj podpořit kávou na Ko-fi:
+
+[![Podpořit na Ko-fi](https://img.shields.io/badge/Ko--fi-Pozvat%20na%20k%C3%A1vu-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/chameloun)
 
 ---
 

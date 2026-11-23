@@ -6,6 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/Chameloun/KindleIOT)](go.mod)
 [![Platform](https://img.shields.io/badge/Kindle-KT4%20armhf%20%7C%20KPM%20%2F%20Scriptlets-lightgrey.svg)](docs/DEPLOYMENT.md)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20on%20Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/chameloun)
 
 [🇬🇧 English](README.md) · [🇨🇿 Česky](README.cs.md)
 
@@ -84,6 +85,14 @@ make build-local
 - [Architecture & Developer Notes](docs/ARCHITECTURE.md) — System diagram, Go packages, X11 rotation & rendering pipeline, and Web HTTP API endpoints.
 - [Contributing Guide](CONTRIBUTING.md) — Running tests, generating PNG previews, and e-ink / font glyph guidelines.
 - [Third-Party Notices](THIRD_PARTY_NOTICES.md) — Embedded fonts, root CAs, and Go dependency licenses.
+
+---
+
+## Support
+
+KindleIOT is free and open-source under the MIT License. If it helped you give an old Kindle a second life on your wall, you can support further development on Ko-fi:
+
+[![Support me on Ko-fi](https://img.shields.io/badge/Ko--fi-Buy%20me%20a%20coffee-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/chameloun)
 
 ---
 
