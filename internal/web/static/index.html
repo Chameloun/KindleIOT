@@ -179,11 +179,32 @@
     .opt-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; margin-bottom: 6px; }
 
     .preview-layout { display: grid; grid-template-columns: 360px 1fr; gap: 18px; align-items: start; }
+    .preview-layout > .panel { min-width: 0; }
     @media (max-width: 900px) { .preview-layout { grid-template-columns: 1fr; } }
     #screenImg { width: 100%; max-width: 340px; border: 3px solid #111; border-radius: 6px; cursor: pointer; display: block; margin: 0 auto; }
 
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #eee; word-break: break-all; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #eee; word-break: normal; overflow-wrap: break-word; }
+
+    .topic-filter-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+    .topic-filter-row input { flex: 1; max-width: 420px; }
+    .topic-list { display: flex; flex-direction: column; gap: 10px; }
+    .topic-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: #fff; min-width: 0; }
+    .topic-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+    .topic-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; flex: 1 1 280px; }
+    .topic-name { font-family: ui-monospace, monospace; font-size: 13px; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+    .topic-time { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .topic-actions { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+    .topic-payload-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .topic-preview-line { font-family: ui-monospace, monospace; font-size: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 5px; padding: 4px 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 220px; min-width: 0; }
+    .json-chips-wrap { margin-top: 8px; }
+    .json-chips-hint { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .json-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .json-chip { border: 1px solid #cbd5e1; background: #f8fafc; color: var(--fg); border-radius: 999px; padding: 3px 9px; font-size: 12px; cursor: pointer; display: inline-flex; gap: 5px; align-items: center; max-width: 100%; font-weight: 500; }
+    .json-chip:hover { border-color: #111; background: #eef2f7; }
+    .json-chip-k { color: var(--muted); font-family: ui-monospace, monospace; font-size: 11px; }
+    .json-chip-v { font-weight: 700; font-family: ui-monospace, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; max-width: 180px; white-space: nowrap; }
+    .topic-json { margin: 8px 0 0; padding: 10px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.45; max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
     #saveToast { font-size: 13px; font-weight: 600; }
   </style>
 </head>
@@ -623,10 +644,11 @@
       <div class="panel">
         <h2 data-i18n="prev.mqttTitle">MQTT Brokers &amp; Discovered Topics</h2>
         <div id="brokerPills" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;"></div>
-        <table>
-          <thead><tr><th data-i18n="prev.thBroker">Broker</th><th data-i18n="prev.thTopic">Topic</th><th data-i18n="prev.thPayload">Last payload</th><th data-i18n="prev.thTime">Updated</th><th data-i18n="prev.thActions">Quick add</th></tr></thead>
-          <tbody id="topicsBody"></tbody>
-        </table>
+        <div class="topic-filter-row">
+          <input id="topicFilter" type="search" data-i18n-placeholder="prev.filterPh" placeholder="Filter by topic, broker, or payload…" oninput="renderTopicsList()" />
+          <span id="topicCount" class="hint"></span>
+        </div>
+        <div id="topicsList" class="topic-list"></div>
       </div>
     </div>
   </section>
@@ -1831,9 +1853,36 @@
       const redrawCanvas = () => { if (isFP) renderFloorplanSVG(); else renderKindleGrid(); };
 
       window._setW = (key, val) => {
-        w[key] = val;
+        if (val === null || val === undefined) {
+          delete w[key];
+        } else {
+          w[key] = val;
+        }
         markDirty(true);
         redrawCanvas();
+      };
+      window._setPrecision = (key, raw) => {
+        if (raw === '' || raw === null || raw === undefined) {
+          _setW(key, null);
+        } else {
+          const n = parseInt(raw, 10);
+          _setW(key, Number.isFinite(n) ? n : null);
+        }
+      };
+      const renderPrecisionSelect = (fieldKey, curVal, labelText, fullWidth) => {
+        const strVal = (curVal === null || curVal === undefined) ? '' : String(curVal);
+        return `
+          <label class="field${fullWidth ? ' full' : ''}">${escapeHtml(labelText)}
+            <select onchange="_setPrecision('${fieldKey}', this.value)">
+              <option value="" ${strVal === '' ? 'selected' : ''}>${escapeHtml(t('insp.decAuto'))}</option>
+              <option value="0" ${strVal === '0' ? 'selected' : ''}>${escapeHtml(t('insp.decEx0'))}</option>
+              <option value="1" ${strVal === '1' ? 'selected' : ''}>${escapeHtml(t('insp.decEx1'))}</option>
+              <option value="2" ${strVal === '2' ? 'selected' : ''}>${escapeHtml(t('insp.decEx2'))}</option>
+              <option value="3" ${strVal === '3' ? 'selected' : ''}>3</option>
+              <option value="4" ${strVal === '4' ? 'selected' : ''}>4</option>
+            </select>
+          </label>
+        `;
       };
       window._changeVizType = (newType) => {
         w.type = newType;
@@ -1946,7 +1995,7 @@
           <label class="field">${escapeHtml(t('insp.min'))} <input type="number" step="any" value="${w.min ?? 0}" oninput="_setW('min', parseFloat(this.value)||0)" /></label>
           <label class="field">${escapeHtml(t('insp.max'))} <input type="number" step="any" value="${w.max ?? 100}" oninput="_setW('max', parseFloat(this.value)||0)" /></label>
           <label class="field">${escapeHtml(t('insp.step'))} <input type="number" step="any" value="${w.step ?? 1}" oninput="_setW('step', parseFloat(this.value)||1)" /></label>
-          <label class="field">${escapeHtml(t('insp.decimals'))} <input type="number" min="0" max="4" value="${w.precision ?? 0}" oninput="_setW('precision', parseInt(this.value,10)||0)" /></label>
+          ${renderPrecisionSelect('precision', w.precision, t('insp.decimals'), false)}
           <label class="field full">${escapeHtml(t('insp.unit'))} <input type="text" value="${escapeAttr(w.unit || '')}" oninput="_setW('unit', this.value)" /></label>
         `;
       } else if (w.type === 'sensor' || w.type === 'gauge' || w.type === 'chart') {
@@ -1968,15 +2017,13 @@
           <label class="field">${escapeHtml(t('insp.unit'))}
             <input type="text" value="${escapeAttr(w.unit || '')}" placeholder="°C, W, %" oninput="_setW('unit', this.value)" />
           </label>
+          ${renderPrecisionSelect('precision', w.precision, t('insp.decimals'), true)}
           ${(w.type === 'gauge' || w.type === 'chart') ? `
             <label class="field">${escapeHtml(t('insp.rangeMin'))} ${w.type==='chart'?escapeHtml(t('insp.auto0')):''}
               <input type="number" step="any" value="${w.min ?? 0}" oninput="_setW('min', parseFloat(this.value)||0)" />
             </label>
             <label class="field">${escapeHtml(t('insp.rangeMax'))} ${w.type==='chart'?escapeHtml(t('insp.auto0')):''}
               <input type="number" step="any" value="${w.max ?? (w.type==='gauge'?100:0)}" oninput="_setW('max', parseFloat(this.value)||0)" />
-            </label>
-            <label class="field full">${escapeHtml(t('insp.decimals'))}
-              <input type="number" min="0" max="4" value="${w.precision ?? 1}" oninput="_setW('precision', parseInt(this.value,10)||0)" />
             </label>
           ` : `
             <div class="full">
@@ -1996,6 +2043,7 @@
             <label class="field">${escapeHtml(t('insp.secUnit'))}
               <input type="text" value="${escapeAttr(w.secondary_unit || '')}" oninput="_setW('secondary_unit', this.value)" />
             </label>
+            ${renderPrecisionSelect('secondary_precision', w.secondary_precision, t('insp.secDecimals'), true)}
           `}
         `;
       } else if (w.type === 'select') {
@@ -2205,12 +2253,49 @@
       }
     }
 
-    function quickAddFromTopic(topic, type, brokerID) {
+    const expandedTopics = new Set();
+    let liveTopicRows = [];
+    let renderedTopicCards = [];
+
+    function inferWidgetHint(key, rawVal) {
+      const k = String(key || '').toLowerCase();
+      let unit = '';
+      if (k.includes('temp')) unit = '°C';
+      else if (k.includes('hum') || k.includes('vlhk') || k.includes('bat') || k.includes('rsoc')) unit = '%';
+      else if (k.includes('mv')) unit = 'mV';
+      else if (k.includes('volt')) unit = 'V';
+      else if (k.includes('watt') || k.includes('power')) unit = 'W';
+      else if (k.includes('rssi')) unit = 'dBm';
+      else if (k.includes('snr')) unit = 'dB';
+      else if (k.includes('press')) unit = 'hPa';
+      const label = key
+        ? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+        : '';
+      let precision;
+      if (typeof rawVal === 'number') {
+        const dec = (String(rawVal).split('.')[1] || '').length;
+        if (dec > 2) precision = 1;
+      }
+      return { label, unit, precision };
+    }
+
+    function quickAddFromTopic(topic, type, brokerID, jsonPath, fieldKey, rawVal) {
       const page = cfg.pages[activePageIdx];
       const w = createDefaultWidget(type, topic);
       const primaryID = cfg?.mqtt?.id || 'default';
       if (brokerID && brokerID !== primaryID) {
         w.broker_id = brokerID;
+      }
+      if (jsonPath) {
+        w.state_json_path = jsonPath;
+      }
+      if (fieldKey) {
+        const hint = inferWidgetHint(fieldKey, rawVal);
+        if (hint.label) w.label = hint.label;
+        if (hint.unit && (type === 'sensor' || type === 'gauge' || type === 'chart')) w.unit = hint.unit;
+        if (hint.precision !== undefined && (type === 'sensor' || type === 'gauge' || type === 'chart')) {
+          w.precision = hint.precision;
+        }
       }
       if ((page.type || 'grid') === 'floorplan') {
         const fp = ensureFloorplan();
@@ -2226,6 +2311,199 @@
       markDirty(true);
       renderDesigner();
       switchTab('designer', document.querySelector('.nav-tab'));
+    }
+
+    function extractScalarFields(root) {
+      const found = [];
+      const seen = new Set();
+      function walk(node, path, key) {
+        if (node === null || node === undefined) return;
+        const tp = typeof node;
+        if (tp === 'number' || tp === 'boolean' || tp === 'string') {
+          if (tp === 'string' && node.length > 64) return;
+          if (!seen.has(path)) {
+            seen.add(path);
+            let prio = 2;
+            if (path.includes('decoded_payload.') || path.includes('.decoded.')) prio = 0;
+            else if (tp === 'number' && !path.includes('rx_metadata[') && !path.includes('timestamp')) prio = 1;
+            else if (path.includes('rx_metadata[') || path.includes('uplink_token') || path.includes('correlation_ids')) prio = 3;
+            found.push({ path, key, val: node, tp, prio });
+          }
+          return;
+        }
+        if (Array.isArray(node)) {
+          for (let i = 0; i < Math.min(node.length, 3); i++) {
+            walk(node[i], `${path}[${i}]`, key);
+          }
+          return;
+        }
+        if (tp === 'object') {
+          Object.keys(node).forEach(k => {
+            walk(node[k], `${path}.${k}`, k);
+          });
+        }
+      }
+      walk(root, '$', '');
+      found.sort((a, b) => a.prio - b.prio);
+      return found;
+    }
+
+    function formatChipValue(v) {
+      if (typeof v === 'number') {
+        const s = String(v);
+        if (s.includes('.')) {
+          const parts = s.split('.');
+          if (parts[1].length > 3) return v.toFixed(2) + '…';
+        }
+        return s;
+      }
+      return String(v);
+    }
+
+    function toggleTopicExpand(cardIdx) {
+      const card = renderedTopicCards[cardIdx];
+      if (!card) return;
+      if (expandedTopics.has(card.rowKey)) expandedTopics.delete(card.rowKey);
+      else expandedTopics.add(card.rowKey);
+      renderTopicsList();
+    }
+
+    function copyTopicPayload(cardIdx, btn) {
+      const card = renderedTopicCards[cardIdx];
+      if (!card) return;
+      const text = card.prettyText;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          btn.textContent = t('prev.copied');
+          setTimeout(() => { btn.textContent = t('prev.copyJson'); }, 1500);
+        }).catch(() => {});
+      }
+    }
+
+    function quickAddFromCard(cardIdx, type, fieldIdx) {
+      const card = renderedTopicCards[cardIdx];
+      if (!card) return;
+      if (fieldIdx !== undefined && fieldIdx !== null) {
+        const f = card.fields[fieldIdx];
+        if (!f) return;
+        quickAddFromTopic(card.topic, typeof f.val === 'boolean' ? 'switch' : type, card.brokerID, f.path, f.key, f.val);
+      } else {
+        quickAddFromTopic(card.topic, type, card.brokerID);
+      }
+    }
+
+    function renderTopicsList() {
+      const listEl = document.getElementById('topicsList');
+      const countEl = document.getElementById('topicCount');
+      if (!listEl) return;
+      const filterInput = document.getElementById('topicFilter');
+      const q = filterInput ? filterInput.value.trim().toLowerCase() : '';
+
+      const filtered = q
+        ? liveTopicRows.filter(r =>
+            r.topic.toLowerCase().includes(q) ||
+            r.brokerID.toLowerCase().includes(q) ||
+            String(r.item.payload || '').toLowerCase().includes(q))
+        : liveTopicRows;
+
+      if (countEl) {
+        countEl.textContent = q ? `${filtered.length} / ${liveTopicRows.length}` : String(liveTopicRows.length);
+      }
+
+      if (liveTopicRows.length === 0) {
+        listEl.innerHTML = `<p class="hint">${escapeHtml(t('prev.emptyTopics'))}</p>`;
+        renderedTopicCards = [];
+        return;
+      }
+      if (filtered.length === 0) {
+        listEl.innerHTML = `<p class="hint">${escapeHtml(t('prev.noMatches'))}</p>`;
+        renderedTopicCards = [];
+        return;
+      }
+
+      renderedTopicCards = [];
+      listEl.innerHTML = '';
+
+      filtered.forEach((r, idx) => {
+        const rowKey = r.brokerID + '\n' + r.topic;
+        const expanded = expandedTopics.has(rowKey);
+        const raw = String(r.item.payload ?? '');
+        const ts = r.item.updated_at ? new Date(r.item.updated_at).toLocaleTimeString() : '';
+
+        let isJson = false;
+        let prettyText = raw;
+        let fields = [];
+        const trimmed = raw.trim();
+        if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            isJson = true;
+            prettyText = JSON.stringify(parsed, null, 2);
+            fields = extractScalarFields(parsed);
+          } catch (_) {}
+        }
+
+        renderedTopicCards[idx] = { rowKey, topic: r.topic, brokerID: r.brokerID, prettyText, fields };
+
+        const isLongPlain = !isJson && raw.length > 100;
+        let payloadHtml = '';
+        if (!isJson && !isLongPlain) {
+          payloadHtml = `
+            <div class="topic-payload-bar">
+              <code class="topic-preview-line" style="white-space:normal; word-break:break-word; flex:0 1 auto;">${escapeHtml(raw)}</code>
+            </div>`;
+        } else if (!isJson && isLongPlain) {
+          payloadHtml = `
+            <div class="topic-payload-bar">
+              <code class="topic-preview-line">${escapeHtml(raw)}</code>
+              <button type="button" class="secondary sm" onclick="toggleTopicExpand(${idx})">${escapeHtml(t(expanded ? 'prev.hideMore' : 'prev.showMore'))}</button>
+              <button type="button" class="secondary sm" onclick="copyTopicPayload(${idx}, this)">${escapeHtml(t('prev.copyJson'))}</button>
+            </div>
+            ${expanded ? `<pre class="topic-json">${escapeHtml(raw)}</pre>` : ''}`;
+        } else {
+          const maxChips = expanded ? 36 : 6;
+          const visibleFields = fields.slice(0, maxChips);
+          const chipsHtml = visibleFields.length ? `
+            <div class="json-chips-wrap">
+              <div class="json-chips-hint">${escapeHtml(t('prev.fieldsHint'))}</div>
+              <div class="json-chips">
+                ${visibleFields.map((f, fi) => `
+                  <button type="button" class="json-chip" title="${escapeAttr(f.path + ' = ' + String(f.val))}" onclick="quickAddFromCard(${idx}, 'sensor', ${fi})">
+                    <span class="json-chip-k">${escapeHtml(f.key || f.path)}:</span>
+                    <span class="json-chip-v">${escapeHtml(formatChipValue(f.val))}</span>
+                  </button>`).join('')}
+              </div>
+            </div>` : '';
+
+          payloadHtml = `
+            <div class="topic-payload-bar">
+              <code class="topic-preview-line">${escapeHtml(raw)}</code>
+              <button type="button" class="secondary sm" onclick="toggleTopicExpand(${idx})">${escapeHtml(t(expanded ? 'prev.hideJson' : 'prev.showJson'))}</button>
+              <button type="button" class="secondary sm" onclick="copyTopicPayload(${idx}, this)">${escapeHtml(t('prev.copyJson'))}</button>
+            </div>
+            ${chipsHtml}
+            ${expanded ? `<pre class="topic-json">${escapeHtml(prettyText)}</pre>` : ''}`;
+        }
+
+        const cardEl = document.createElement('div');
+        cardEl.className = 'topic-card';
+        cardEl.innerHTML = `
+          <div class="topic-head">
+            <div class="topic-meta">
+              <span class="pill">${escapeHtml(r.brokerID)}</span>
+              <span class="topic-name">${escapeHtml(r.topic)}</span>
+              ${ts ? `<span class="topic-time">${escapeHtml(ts)}</span>` : ''}
+            </div>
+            <div class="topic-actions">
+              <button type="button" class="secondary sm" onclick="quickAddFromCard(${idx}, 'sensor')">${escapeHtml(t('prev.addSensor'))}</button>
+              <button type="button" class="secondary sm" onclick="quickAddFromCard(${idx}, 'gauge')">${escapeHtml(t('prev.addGauge'))}</button>
+              <button type="button" class="secondary sm" onclick="quickAddFromCard(${idx}, 'chart')">${escapeHtml(t('prev.addChart'))}</button>
+              <button type="button" class="secondary sm" onclick="quickAddFromCard(${idx}, 'switch')">${escapeHtml(t('prev.addSwitch'))}</button>
+            </div>
+          </div>
+          ${payloadHtml}`;
+        listEl.appendChild(cardEl);
+      });
     }
 
     async function resetHomeKitPairing() {
@@ -2296,24 +2574,8 @@
       document.getElementById('knownTopics').innerHTML =
         Array.from(allTopicNames).sort().map(k => `<option value="${escapeAttr(k)}"></option>`).join('');
 
-      const tbody = document.getElementById('topicsBody');
-      tbody.innerHTML = '';
-      for (const r of rows) {
-        const tr = document.createElement('tr');
-        const ts = r.item.updated_at ? new Date(r.item.updated_at).toLocaleTimeString() : '';
-        tr.innerHTML = `
-          <td><span class="pill">${escapeHtml(r.brokerID)}</span></td>
-          <td><code>${escapeHtml(r.topic)}</code></td>
-          <td><code>${escapeHtml(r.item.payload)}</code></td>
-          <td>${escapeHtml(ts)}</td>
-          <td style="white-space:nowrap;">
-            <button class="secondary sm" onclick="quickAddFromTopic('${escapeAttr(r.topic)}','sensor','${escapeAttr(r.brokerID)}')">${escapeHtml(t('prev.addSensor'))}</button>
-            <button class="secondary sm" onclick="quickAddFromTopic('${escapeAttr(r.topic)}','gauge','${escapeAttr(r.brokerID)}')">${escapeHtml(t('prev.addGauge'))}</button>
-            <button class="secondary sm" onclick="quickAddFromTopic('${escapeAttr(r.topic)}','chart','${escapeAttr(r.brokerID)}')">${escapeHtml(t('prev.addChart'))}</button>
-            <button class="secondary sm" onclick="quickAddFromTopic('${escapeAttr(r.topic)}','switch','${escapeAttr(r.brokerID)}')">${escapeHtml(t('prev.addSwitch'))}</button>
-          </td>`;
-        tbody.appendChild(tr);
-      }
+      liveTopicRows = rows;
+      renderTopicsList();
     }
 
     async function pollStatus() {

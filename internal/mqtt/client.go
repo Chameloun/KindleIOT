@@ -637,7 +637,7 @@ func FormatCommand(tmpl string, value float64, precision int) string {
 		tmpl = "{{value}}"
 	}
 	var formatted string
-	if precision > 0 {
+	if precision >= 0 {
 		formatted = strconv.FormatFloat(value, 'f', precision, 64)
 	} else {
 		if math.Abs(value-math.Round(value)) < 1e-9 {

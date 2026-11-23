@@ -37,6 +37,15 @@ func TestFormatCommand(t *testing.T) {
 	if got := FormatCommand(`{"target": {{value}}}`, 22, 0); got != `{"target": 22}` {
 		t.Fatalf("got %q", got)
 	}
+	if got := FormatCommand("{{value}}", 22.6, 0); got != "23" {
+		t.Fatalf("got %q, want 23", got)
+	}
+	if got := FormatCommand("{{value}}", 21.5, -1); got != "21.5" {
+		t.Fatalf("got %q, want 21.5", got)
+	}
+	if got := FormatCommand("{{value}}", 22.0, -1); got != "22" {
+		t.Fatalf("got %q, want 22", got)
+	}
 }
 
 func TestNormalizeBrokerURL(t *testing.T) {

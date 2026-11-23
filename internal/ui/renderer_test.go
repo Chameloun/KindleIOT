@@ -134,7 +134,7 @@ func TestRendererGaugeChartAndFloorplan(t *testing.T) {
 			Columns: 2,
 			Widgets: []config.WidgetConfig{
 				{ID: "g1", Type: "gauge", Label: "Výkon", StateTopic: "home/power", Min: 0, Max: 3000, Unit: "W"},
-				{ID: "c1", Type: "chart", Label: "Teplota", StateTopic: "home/temp", Unit: "°C", Precision: 1},
+				{ID: "c1", Type: "chart", Label: "Teplota", StateTopic: "home/temp", Unit: "°C", Precision: config.IntPtr(1)},
 			},
 		},
 		{
@@ -288,7 +288,7 @@ func TestRendererDetailWeatherMacroAndPin(t *testing.T) {
 					Label:         "Obývák",
 					StateTopic:    "home/livingroom/sensor",
 					StateJSONPath: "$.temperature",
-					Precision:     1,
+					Precision:     config.IntPtr(1),
 					Unit:          "°C",
 					ShowInStandby: true,
 				},
@@ -906,7 +906,7 @@ func TestRendererI18nEnglishAndCzech(t *testing.T) {
 				Columns: 2,
 				Widgets: []config.WidgetConfig{
 					{ID: "g1", Type: "gauge", Label: "Power", StateTopic: "home/power", Min: 0, Max: 3000, Unit: "W"},
-					{ID: "c1", Type: "chart", Label: "Temperature", StateTopic: "home/temp", Unit: "°C", Precision: 1},
+					{ID: "c1", Type: "chart", Label: "Temperature", StateTopic: "home/temp", Unit: "°C", Precision: config.IntPtr(1)},
 				},
 			},
 			{
@@ -1066,4 +1066,47 @@ func TestRendererI18nEnglishAndCzech(t *testing.T) {
 	r.SetStandby(true)
 	imgStandby, _ := r.Render()
 	maybeSavePreview("en_standby_landscape.png", imgStandby)
+}
+
+func TestFormatNumberAndSensorPrecision(t *testing.T) {
+	if got := formatNumber(20.771865844726562, -1); got != "20.771865844726562" {
+		t.Fatalf("auto float = %q", got)
+	}
+	if got := formatNumber(22.0, -1); got != "22" {
+		t.Fatalf("auto int = %q, want 22", got)
+	}
+	if got := formatNumber(28.369140625, 0); got != "28" {
+		t.Fatalf("precision 0 = %q, want 28", got)
+	}
+	if got := formatNumber(20.771865844726562, 1); got != "20.8" {
+		t.Fatalf("precision 1 = %q, want 20.8", got)
+	}
+	if got := formatNumber(20.771865844726562, 2); got != "20.77" {
+		t.Fatalf("precision 2 = %q, want 20.77", got)
+	}
+
+	rawTemp := "20.771865844726562"
+	rawHum := "28.369140625"
+
+	wdAuto := config.WidgetConfig{Type: "sensor", Unit: "°C", SecondaryUnit: "%"}
+	if got := formatWidgetValue(rawTemp, wdAuto); got != "20.771865844726562 °C" {
+		t.Fatalf("auto sensor = %q", got)
+	}
+	if got := formatSecondaryValue(rawHum, wdAuto); got != "28.369140625 %" {
+		t.Fatalf("auto secondary = %q", got)
+	}
+
+	wdPrec := config.WidgetConfig{
+		Type:               "sensor",
+		Precision:          config.IntPtr(1),
+		Unit:               "°C",
+		SecondaryPrecision: config.IntPtr(0),
+		SecondaryUnit:      "%",
+	}
+	if got := formatWidgetValue(rawTemp, wdPrec); got != "20.8 °C" {
+		t.Fatalf("precision 1 sensor = %q, want 20.8 °C", got)
+	}
+	if got := formatSecondaryValue(rawHum, wdPrec); got != "28 %" {
+		t.Fatalf("secondary precision 0 = %q, want 28 %%", got)
+	}
 }

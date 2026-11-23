@@ -242,14 +242,15 @@ type WidgetConfig struct {
 	Confirm           bool              `yaml:"confirm,omitempty" json:"confirm,omitempty"`
 	Min               float64           `yaml:"min,omitempty" json:"min,omitempty"`
 	Max               float64           `yaml:"max,omitempty" json:"max,omitempty"`
-	Step              float64           `yaml:"step,omitempty" json:"step,omitempty"`
-	Precision         int               `yaml:"precision,omitempty" json:"precision,omitempty"`
-	Unit              string            `yaml:"unit,omitempty" json:"unit,omitempty"`
-	Format            string            `yaml:"format,omitempty" json:"format,omitempty"`
-	CommandTemplate   string            `yaml:"command_template,omitempty" json:"command_template,omitempty"`
-	SecondaryTopic    string            `yaml:"secondary_topic,omitempty" json:"secondary_topic,omitempty"`
-	SecondaryJSONPath string            `yaml:"secondary_json_path,omitempty" json:"secondary_json_path,omitempty"`
-	SecondaryUnit     string            `yaml:"secondary_unit,omitempty" json:"secondary_unit,omitempty"`
+	Step               float64           `yaml:"step,omitempty" json:"step,omitempty"`
+	Precision          *int              `yaml:"precision,omitempty" json:"precision,omitempty"`
+	Unit               string            `yaml:"unit,omitempty" json:"unit,omitempty"`
+	Format             string            `yaml:"format,omitempty" json:"format,omitempty"`
+	CommandTemplate    string            `yaml:"command_template,omitempty" json:"command_template,omitempty"`
+	SecondaryTopic     string            `yaml:"secondary_topic,omitempty" json:"secondary_topic,omitempty"`
+	SecondaryJSONPath  string            `yaml:"secondary_json_path,omitempty" json:"secondary_json_path,omitempty"`
+	SecondaryPrecision *int              `yaml:"secondary_precision,omitempty" json:"secondary_precision,omitempty"`
+	SecondaryUnit      string            `yaml:"secondary_unit,omitempty" json:"secondary_unit,omitempty"`
 	ValueMap          map[string]string `yaml:"value_map,omitempty" json:"value_map,omitempty"`
 	StaleSeconds      int               `yaml:"stale_seconds,omitempty" json:"stale_seconds,omitempty"`
 	Options           []SelectOption    `yaml:"options,omitempty" json:"options,omitempty"`
@@ -267,6 +268,27 @@ type WidgetConfig struct {
 	TargetWidgetID    string            `yaml:"target_widget_id,omitempty" json:"target_widget_id,omitempty"`
 	TargetState       string            `yaml:"target_state,omitempty" json:"target_state,omitempty"`     // OFF (default), ON, TOGGLE
 	TimerPresets      []int             `yaml:"timer_presets,omitempty" json:"timer_presets,omitempty"` // minutes, default [5,15,30]
+}
+
+// IntPtr returns a heap-allocated pointer to v for optional integer config fields.
+func IntPtr(v int) *int {
+	return &v
+}
+
+// EffectivePrecision returns the configured decimal precision (0..6) or -1 when omitted (auto).
+func (w WidgetConfig) EffectivePrecision() int {
+	if w.Precision == nil {
+		return -1
+	}
+	return clampInt(*w.Precision, 0, 6)
+}
+
+// EffectiveSecondaryPrecision returns the secondary decimal precision (0..6) or -1 when omitted (auto).
+func (w WidgetConfig) EffectiveSecondaryPrecision() int {
+	if w.SecondaryPrecision == nil {
+		return -1
+	}
+	return clampInt(*w.SecondaryPrecision, 0, 6)
 }
 
 // CheckAlert evaluates whether a numeric reading violates the widget's configured alert thresholds.
@@ -383,7 +405,7 @@ func DefaultConfig() *Config {
 						Min:             15,
 						Max:             28,
 						Step:            0.5,
-						Precision:       1,
+						Precision:       IntPtr(1),
 						Unit:            "°C",
 					},
 					{
@@ -710,6 +732,14 @@ func normalizeWidget(w *WidgetConfig, prefix string, idx int, maxCols int, known
 	}
 	if w.QoS > 2 {
 		return fmt.Errorf("widget %q has invalid qos %d", w.ID, w.QoS)
+	}
+	if w.Precision != nil {
+		v := clampInt(*w.Precision, 0, 6)
+		w.Precision = &v
+	}
+	if w.SecondaryPrecision != nil {
+		v := clampInt(*w.SecondaryPrecision, 0, 6)
+		w.SecondaryPrecision = &v
 	}
 	switch w.Type {
 	case "switch":

@@ -244,3 +244,45 @@ func TestNormalizeLanguage(t *testing.T) {
 		t.Fatalf("expected normalized language cs, got %q", cfg.Device.Language)
 	}
 }
+
+func TestWidgetPrecisionSerializationAndHelpers(t *testing.T) {
+	raw := []byte(`
+mqtt:
+  broker: tcp://10.0.0.5:1883
+pages:
+  - title: Precision
+    widgets:
+      - id: auto_s
+        type: sensor
+        label: Auto
+        state_topic: t/1
+      - id: zero_s
+        type: sensor
+        label: Zero
+        state_topic: t/2
+        precision: 0
+        secondary_topic: t/2
+        secondary_precision: 0
+      - id: two_s
+        type: sensor
+        label: Two
+        state_topic: t/3
+        precision: 2
+        secondary_topic: t/3
+        secondary_precision: 9
+`)
+	cfg, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	ws := cfg.Pages[0].Widgets
+	if ws[0].EffectivePrecision() != -1 || ws[0].EffectiveSecondaryPrecision() != -1 {
+		t.Fatalf("expected omitted precision to be -1 (auto), got %d / %d", ws[0].EffectivePrecision(), ws[0].EffectiveSecondaryPrecision())
+	}
+	if ws[1].EffectivePrecision() != 0 || ws[1].EffectiveSecondaryPrecision() != 0 {
+		t.Fatalf("expected explicit precision 0 to stay 0, got %d / %d", ws[1].EffectivePrecision(), ws[1].EffectiveSecondaryPrecision())
+	}
+	if ws[2].EffectivePrecision() != 2 || ws[2].EffectiveSecondaryPrecision() != 6 {
+		t.Fatalf("expected precision 2 and clamped 6, got %d / %d", ws[2].EffectivePrecision(), ws[2].EffectiveSecondaryPrecision())
+	}
+}

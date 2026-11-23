@@ -267,7 +267,7 @@ func (r *Renderer) EvaluateAlerts() []string {
 		if trig, limitStr := w.CheckAlert(f); trig {
 			if !r.activeAlerts[w.ID] {
 				r.activeAlerts[w.ID] = true
-				msg := fmt.Sprintf(r.tr().AlertPrefix, w.Label, formatNumber(f, w.Precision), suffixUnit(w.Unit), limitStr, suffixUnit(w.Unit))
+				msg := fmt.Sprintf(r.tr().AlertPrefix, w.Label, formatNumber(f, w.EffectivePrecision()), suffixUnit(w.Unit), limitStr, suffixUnit(w.Unit))
 				r.noticeText = msg
 				r.noticeUntil = time.Now().Add(2 * time.Minute)
 				r.standbyMode = false
@@ -894,7 +894,7 @@ func (r *Renderer) drawStepperCard(rect image.Rectangle, wd config.WidgetConfig)
 		if f, err := strconv.ParseFloat(raw, 64); err == nil {
 			curVal = f
 			hasVal = true
-			valText = formatNumber(f, wd.Precision) + suffixUnit(wd.Unit)
+			valText = formatNumber(f, wd.EffectivePrecision()) + suffixUnit(wd.Unit)
 		} else if raw != "" {
 			valText = raw + suffixUnit(wd.Unit)
 		}
@@ -902,7 +902,7 @@ func (r *Renderer) drawStepperCard(rect image.Rectangle, wd config.WidgetConfig)
 
 	// Range hint in top right
 	drawRightText(r.canvas, r.fonts.small, face.Max.X-14, face.Min.Y+28, colDark,
-		fmt.Sprintf("%s–%s%s", formatNumber(wd.Min, wd.Precision), formatNumber(wd.Max, wd.Precision), suffixUnit(wd.Unit)))
+		fmt.Sprintf("%s–%s%s", formatNumber(wd.Min, wd.EffectivePrecision()), formatNumber(wd.Max, wd.EffectivePrecision()), suffixUnit(wd.Unit)))
 
 	btnW := 74
 	btnH := 66
@@ -981,17 +981,7 @@ func (r *Renderer) drawSensorCard(rect image.Rectangle, wd config.WidgetConfig, 
 
 	if tv, ok := r.mq.GetTopic(wd.BrokerID, wd.StateTopic); ok {
 		raw := mqtt.ExtractValue(tv.Payload, wd.StateJSONPath)
-		if mapped, exists := wd.ValueMap[raw]; exists {
-			valText = mapped
-		} else if wd.Format != "" {
-			if f, err := strconv.ParseFloat(raw, 64); err == nil {
-				valText = fmt.Sprintf(wd.Format, f) + suffixUnit(wd.Unit)
-			} else if raw != "" {
-				valText = raw + suffixUnit(wd.Unit)
-			}
-		} else if raw != "" {
-			valText = raw + suffixUnit(wd.Unit)
-		}
+		valText = formatWidgetValue(raw, wd)
 
 		age := now.Sub(tv.UpdatedAt)
 		if wd.StaleSeconds > 0 && age > time.Duration(wd.StaleSeconds)*time.Second {
@@ -1010,9 +1000,7 @@ func (r *Renderer) drawSensorCard(rect image.Rectangle, wd config.WidgetConfig, 
 		secText := "—"
 		if tv2, ok := r.mq.GetTopic(wd.BrokerID, wd.SecondaryTopic); ok {
 			raw2 := mqtt.ExtractValue(tv2.Payload, wd.SecondaryJSONPath)
-			if raw2 != "" {
-				secText = raw2 + suffixUnit(wd.SecondaryUnit)
-			}
+			secText = formatSecondaryValue(raw2, wd)
 		}
 		pillW := minInt(face.Dx()/2, font.MeasureString(r.fonts.bold16, secText).Ceil()+18)
 		secPill := image.Rect(face.Min.X+10, face.Max.Y-28, face.Min.X+10+pillW, face.Max.Y-6)
@@ -1064,7 +1052,7 @@ func (r *Renderer) drawGaugeCard(rect image.Rectangle, wd config.WidgetConfig) {
 		if f, err := strconv.ParseFloat(raw, 64); err == nil {
 			curVal = f
 			hasVal = true
-			valText = formatNumber(f, wd.Precision) + suffixUnit(wd.Unit)
+			valText = formatNumber(f, wd.EffectivePrecision()) + suffixUnit(wd.Unit)
 		} else if raw != "" {
 			valText = raw + suffixUnit(wd.Unit)
 		}
@@ -1119,8 +1107,8 @@ func (r *Renderer) drawGaugeCard(rect image.Rectangle, wd config.WidgetConfig) {
 	drawRoundedRect(r.canvas, valBox, 5, 1, colBlack)
 	drawCenteredText(r.canvas, r.fonts.bold16, valBox, colBlack, truncateText(r.fonts.bold16, valText, valBox.Dx()-6))
 
-	drawText(r.canvas, r.fonts.small, face.Min.X+10, face.Max.Y-7, colDark, formatNumber(minV, 0))
-	drawRightText(r.canvas, r.fonts.small, face.Max.X-10, face.Max.Y-7, colDark, formatNumber(maxV, 0))
+	drawText(r.canvas, r.fonts.small, face.Min.X+10, face.Max.Y-7, colDark, formatNumber(minV, -1))
+	drawRightText(r.canvas, r.fonts.small, face.Max.X-10, face.Max.Y-7, colDark, formatNumber(maxV, -1))
 	r.hits = append(r.hits, HitAction{Rect: rect, Type: ActionOpenSensorDetail, Widget: wd})
 }
 
@@ -1150,12 +1138,10 @@ func (r *Renderer) drawChartCard(rect image.Rectangle, wd config.WidgetConfig) {
 	pts := r.mq.GetHistory(wd.BrokerID, wd.StateTopic, wd.StateJSONPath, 60)
 	valText := "—"
 	if len(pts) > 0 {
-		valText = formatNumber(pts[len(pts)-1].Value, wd.Precision) + suffixUnit(wd.Unit)
+		valText = formatNumber(pts[len(pts)-1].Value, wd.EffectivePrecision()) + suffixUnit(wd.Unit)
 	} else if tv, ok := r.mq.GetTopic(wd.BrokerID, wd.StateTopic); ok {
 		raw := mqtt.ExtractValue(tv.Payload, wd.StateJSONPath)
-		if raw != "" {
-			valText = raw + suffixUnit(wd.Unit)
-		}
+		valText = formatWidgetValue(raw, wd)
 	}
 
 	// Highlighted live reading pill on right of header
@@ -1239,9 +1225,9 @@ func (r *Renderer) drawChartCard(rect image.Rectangle, wd config.WidgetConfig) {
 
 	tr := r.tr()
 	drawText(r.canvas, r.fonts.small, plot.Min.X, face.Max.Y-6, colDark,
-		fmt.Sprintf(tr.MinLabel, formatNumber(minV, wd.Precision), suffixUnit(wd.Unit)))
+		fmt.Sprintf(tr.MinLabel, formatNumber(minV, wd.EffectivePrecision()), suffixUnit(wd.Unit)))
 	drawRightText(r.canvas, r.fonts.small, plot.Max.X, face.Max.Y-6, colDark,
-		fmt.Sprintf(tr.MaxLabel, formatNumber(maxV, wd.Precision), suffixUnit(wd.Unit)))
+		fmt.Sprintf(tr.MaxLabel, formatNumber(maxV, wd.EffectivePrecision()), suffixUnit(wd.Unit)))
 	r.hits = append(r.hits, HitAction{Rect: rect, Type: ActionOpenSensorDetail, Widget: wd})
 }
 
@@ -1350,11 +1336,7 @@ func (r *Renderer) drawFloorplanPage(w, top, bottom int, page config.PageConfig,
 			valText := "—"
 			if tv, ok := r.mq.GetTopic(wd.BrokerID, wd.StateTopic); ok {
 				raw := mqtt.ExtractValue(tv.Payload, wd.StateJSONPath)
-				if mapped, exists := wd.ValueMap[raw]; exists {
-					valText = mapped
-				} else if raw != "" {
-					valText = raw + suffixUnit(wd.Unit)
-				}
+				valText = formatWidgetValue(raw, wd)
 			}
 			alerting, _ := r.isWidgetAlerting(wd)
 			face := drawCardFrame(r.canvas, badge, 8, alerting)
@@ -1789,10 +1771,10 @@ func (r *Renderer) executeStepper(wd config.WidgetConfig, delta float64) {
 	if next > wd.Max {
 		next = wd.Max
 	}
-	payload := mqtt.FormatCommand(wd.CommandTemplate, next, wd.Precision)
+	payload := mqtt.FormatCommand(wd.CommandTemplate, next, wd.EffectivePrecision())
 	if err := r.publishWithFeedback(wd.BrokerID, wd.CommandTopic, wd.QoS, wd.Retain, payload); err == nil {
 		if wd.Optimistic && wd.StateTopic != "" && wd.StateJSONPath == "" {
-			r.mq.SetLocalValue(wd.BrokerID, wd.StateTopic, formatNumber(next, wd.Precision))
+			r.mq.SetLocalValue(wd.BrokerID, wd.StateTopic, formatNumber(next, wd.EffectivePrecision()))
 		}
 	}
 }
@@ -1874,13 +1856,52 @@ func truncateText(face font.Face, text string, maxWidth int) string {
 }
 
 func formatNumber(v float64, precision int) string {
-	if precision > 0 {
+	if precision >= 0 {
+		if precision > 6 {
+			precision = 6
+		}
 		return strconv.FormatFloat(v, 'f', precision, 64)
 	}
 	if math.Abs(v-math.Round(v)) < 1e-9 {
 		return strconv.FormatInt(int64(math.Round(v)), 10)
 	}
 	return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+func formatWidgetValue(raw string, wd config.WidgetConfig) string {
+	if mapped, exists := wd.ValueMap[raw]; exists {
+		return mapped
+	}
+	if wd.Format != "" {
+		if f, err := strconv.ParseFloat(raw, 64); err == nil {
+			return fmt.Sprintf(wd.Format, f) + suffixUnit(wd.Unit)
+		}
+		if raw != "" {
+			return raw + suffixUnit(wd.Unit)
+		}
+		return "—"
+	}
+	if prec := wd.EffectivePrecision(); prec >= 0 {
+		if f, err := strconv.ParseFloat(raw, 64); err == nil {
+			return formatNumber(f, prec) + suffixUnit(wd.Unit)
+		}
+	}
+	if raw != "" {
+		return raw + suffixUnit(wd.Unit)
+	}
+	return "—"
+}
+
+func formatSecondaryValue(raw string, wd config.WidgetConfig) string {
+	if raw == "" {
+		return "—"
+	}
+	if prec := wd.EffectiveSecondaryPrecision(); prec >= 0 {
+		if f, err := strconv.ParseFloat(raw, 64); err == nil {
+			return formatNumber(f, prec) + suffixUnit(wd.SecondaryUnit)
+		}
+	}
+	return raw + suffixUnit(wd.SecondaryUnit)
 }
 
 func suffixUnit(u string) string {
@@ -2733,11 +2754,7 @@ func (r *Renderer) drawSensorDetailModal(w, top, bottom int, wd config.WidgetCon
 	ageText := tr.NoData
 	if tv, ok := r.mq.GetTopic(wd.BrokerID, wd.StateTopic); ok {
 		raw := mqtt.ExtractValue(tv.Payload, wd.StateJSONPath)
-		if f, err := strconv.ParseFloat(raw, 64); err == nil {
-			curText = formatNumber(f, wd.Precision) + suffixUnit(wd.Unit)
-		} else if raw != "" {
-			curText = raw + suffixUnit(wd.Unit)
-		}
+		curText = formatWidgetValue(raw, wd)
 		ageText = tr.UpdatedPrefix + formatAgeLang(now.Sub(tv.UpdatedAt), tr)
 	}
 
@@ -2770,9 +2787,9 @@ func (r *Renderer) drawSensorDetailModal(w, top, bottom int, wd config.WidgetCon
 			sum += p.Value
 		}
 		avgV := sum / float64(len(pts))
-		minStr = formatNumber(minV, wd.Precision) + suffixUnit(wd.Unit)
-		avgStr = formatNumber(avgV, wd.Precision) + suffixUnit(wd.Unit)
-		maxStr = formatNumber(maxV, wd.Precision) + suffixUnit(wd.Unit)
+		minStr = formatNumber(minV, wd.EffectivePrecision()) + suffixUnit(wd.Unit)
+		avgStr = formatNumber(avgV, wd.EffectivePrecision()) + suffixUnit(wd.Unit)
+		maxStr = formatNumber(maxV, wd.EffectivePrecision()) + suffixUnit(wd.Unit)
 	}
 
 	statY0 := face.Min.Y + 124
@@ -2810,7 +2827,7 @@ func (r *Renderer) drawSensorDetailModal(w, top, bottom int, wd config.WidgetCon
 	drawText(r.canvas, r.fonts.small, plot.Min.X, face.Max.Y-12, colDark,
 		fmt.Sprintf(tr.SampleCountFmt, len(pts)))
 	drawRightText(r.canvas, r.fonts.small, plot.Max.X, face.Max.Y-12, colDark,
-		fmt.Sprintf(tr.RangeLabelFmt, formatNumber(minV, wd.Precision), formatNumber(maxV, wd.Precision), suffixUnit(wd.Unit)))
+		fmt.Sprintf(tr.RangeLabelFmt, formatNumber(minV, wd.EffectivePrecision()), formatNumber(maxV, wd.EffectivePrecision()), suffixUnit(wd.Unit)))
 }
 
 func (r *Renderer) drawPinModal(w, top, bottom int) {
@@ -2973,13 +2990,7 @@ func (r *Renderer) drawStandbyWidgetCard(rect image.Rectangle, wd config.WidgetC
 		}
 	} else if tv, ok := r.mq.GetTopic(wd.BrokerID, wd.StateTopic); ok {
 		raw := mqtt.ExtractValue(tv.Payload, wd.StateJSONPath)
-		if mapped, exists := wd.ValueMap[raw]; exists {
-			valText = mapped
-		} else if f, err := strconv.ParseFloat(raw, 64); err == nil {
-			valText = formatNumber(f, wd.Precision) + suffixUnit(wd.Unit)
-		} else if raw != "" {
-			valText = raw + suffixUnit(wd.Unit)
-		}
+		valText = formatWidgetValue(raw, wd)
 	}
 	if alerting {
 		valText = "! " + valText
