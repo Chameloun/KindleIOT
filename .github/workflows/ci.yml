@@ -1,0 +1,84 @@
+name: CI & Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-and-build:
+    name: Test & Cross-Compile
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify Go vet
+        run: go vet ./...
+
+      - name: Run unit tests
+        run: go test -v -race ./...
+
+      - name: Build desktop binary (linux/amd64)
+        run: go build -trimpath -o kindleiot ./cmd/kindleiot
+
+      - name: Build Kindle ARMv7 binary (linux/arm GOARM=7)
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags="-s -w" -o dist/kindle/kindleiot/kindleiot-arm ./cmd/kindleiot
+
+      - name: Assemble Kindle release archive
+        run: |
+          mkdir -p release/staging/kindleiot release/staging/documents
+          cp dist/kindle/kindleiot/kindleiot-arm release/staging/kindleiot/kindleiot-arm
+          cp dist/kindle/kindleiot/start.sh release/staging/kindleiot/start.sh
+          chmod +x release/staging/kindleiot/kindleiot-arm release/staging/kindleiot/start.sh
+          cp config.example.yaml release/staging/kindleiot/config.example.yaml
+          cp dist/kindle/documents/KindleIOT.sh release/staging/documents/KindleIOT.sh
+          chmod +x release/staging/documents/KindleIOT.sh
+          cp README.md README.cs.md LICENSE THIRD_PARTY_NOTICES.md release/staging/kindleiot/
+          (cd release/staging && zip -r ../kindleiot-kindle-armhf.zip .)
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kindleiot-kindle-armhf
+          path: release/kindleiot-kindle-armhf.zip
+
+  release:
+    name: Publish GitHub Release
+    needs: test-and-build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release zip
+        uses: actions/download-artifact@v4
+        with:
+          name: kindleiot-kindle-armhf
+          path: release
+
+      - name: Rename zip & generate SHA256SUMS
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          cd release
+          mv kindleiot-kindle-armhf.zip "kindleiot-${TAG}-kindle-armhf.zip"
+          sha256sum "kindleiot-${TAG}-kindle-armhf.zip" > SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/kindleiot-*-kindle-armhf.zip
+            release/SHA256SUMS.txt

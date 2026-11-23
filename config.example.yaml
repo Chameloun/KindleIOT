@@ -1,0 +1,280 @@
+# ==============================================================================
+# KindleIOT Example Configuration
+# Copy to config.yaml or edit visually via the built-in web UI (:8080).
+# Documentation: docs/CONFIGURATION.md
+# ==============================================================================
+
+mqtt:
+  id: default
+  name: Main Broker
+  # Broker URI: tcp://, ssl://, mqtt://, mqtts://, or wss://
+  broker: tcp://192.168.1.10:1883
+  client_id: kindleiot-kt4
+  username: ""
+  password: ""
+  insecure_tls: false
+  keep_alive_sec: 30
+  # Base topic for Kindle telemetry & remote commands:
+  #   Published: <base_topic>/{status,battery,charging,ip,brightness}
+  #   Subscribed: <base_topic>/{brightness/set,notify,screen/refresh}
+  base_topic: kindleiot/panel
+  # Automatically register Battery, Charging and Frontlight into Home Assistant
+  homeassistant_discovery: true
+  discovery_prefix: homeassistant
+
+  # Optional additional MQTT brokers (referenced via widget `broker_id`):
+  # brokers:
+  #   - id: cloud
+  #     name: HiveMQ Cloud
+  #     broker: ssl://example.s1.eu.hivemq.cloud:8883
+  #     username: kindle
+  #     password: change-me
+  #     keep_alive_sec: 30
+
+homekit:
+  enabled: true
+  # 8-digit HomeKit pairing code entered in Apple Home (Domácnost)
+  pin: "00102003"
+  port: 51827
+  store_dir: homekit-db
+
+weather:
+  enabled: true
+  # Built-in Open-Meteo integration (no API key required)
+  location_name: Praha
+  latitude: 50.0755
+  longitude: 14.4378
+
+calendar:
+  enabled: false
+  # Add secret Google Calendar .ics or Apple iCloud webcal:// links:
+  # urls:
+  #   - https://calendar.google.com/calendar/ical/.../basic.ics
+  #   - webcal://p123-caldav.icloud.com/published/2/...
+
+schedules:
+  - id: night_lights_off
+    name: Night turn-off
+    enabled: false
+    hour: 23
+    minute: 0
+    # ISO weekdays: 1=Mon .. 7=Sun (omit/empty = every day)
+    days: [1, 2, 3, 4, 5, 6, 7]
+    widget_id: living_lamp
+    state: OFF
+
+device:
+  title: KindleIOT
+  # Physical Kindle panel resolution
+  width: 600
+  height: 800
+  # Orientation: portrait | landscape (800x600) | landscape_cw (180° rotated)
+  orientation: portrait
+  # E-Ink color scheme: light | dark | auto_night
+  theme_mode: light
+  # Prevent Kindle OS sleep while panel is running
+  prevent_sleep: true
+  # Startup frontlight (-1 = use day/night brightness schedule)
+  initial_brightness: -1
+  backlight_timeout_sec: 60
+  standby_timeout_sec: 300
+  day_brightness: 14
+  night_mode_enabled: true
+  night_brightness: 3
+  night_start_hour: 22
+  night_end_hour: 6
+  # Security PIN (4-8 digits, empty = disabled)
+  pin_code: ""
+  pin_lock_standby: false
+  telemetry_interval_sec: 60
+  # Full black/white flash every N redraws to clear e-ink ghosting
+  full_refresh_every: 20
+
+web:
+  listen: ":8080"
+
+pages:
+  - id: overview
+    title: Přehled
+    type: grid
+    columns: 2
+    widgets:
+      - id: living_temp
+        type: sensor
+        label: Obývák
+        icon: thermometer
+        state_topic: home/livingroom/sensor
+        state_json_path: $.temperature
+        unit: "°C"
+        secondary_topic: home/livingroom/sensor
+        secondary_json_path: $.humidity
+        secondary_unit: "% RV"
+        stale_seconds: 600
+        show_in_standby: true
+        alert_enabled: false
+        # alert_min: 16
+        # alert_max: 29
+
+      - id: living_lamp
+        type: switch
+        label: Stojací lampa
+        subtitle: Apple Home
+        icon: light
+        # Local/virtual switch (empty command_topic + state_topic local/switch/<id>)
+        # Works out of the box with Apple Home without any external MQTT bridge
+        state_topic: local/switch/living_lamp
+        payload_on: "ON"
+        payload_off: "OFF"
+        value_on: "ON"
+        value_off: "OFF"
+        optimistic: true
+        homekit: true
+        homekit_type: lightbulb
+        show_in_standby: true
+
+      - id: lamp_timer
+        type: timer
+        label: Odpočet lampy
+        subtitle: Automatické vypnutí
+        target_widget_id: living_lamp
+        target_state: OFF
+        timer_presets: [5, 15, 30]
+
+      - id: main_light
+        type: switch
+        label: Hlavní světlo
+        subtitle: Zigbee2MQTT
+        state_topic: zigbee2mqtt/living_light
+        state_json_path: $.state
+        command_topic: zigbee2mqtt/living_light/set
+        payload_on: '{"state":"ON"}'
+        payload_off: '{"state":"OFF"}'
+        value_on: "ON"
+        value_off: "OFF"
+        homekit: true
+        homekit_type: lightbulb
+
+      - id: weather_card
+        type: weather
+        label: Počasí
+        span: 2
+
+      - id: thermostat
+        type: stepper
+        label: Termostat
+        span: 2
+        state_topic: home/thermostat/target
+        command_topic: home/thermostat/target/set
+        command_template: "{{value}}"
+        min: 15
+        max: 28
+        step: 0.5
+        precision: 1
+        unit: "°C"
+
+      - id: mode_select
+        type: select
+        label: Režim domu
+        span: 2
+        state_topic: home/mode/state
+        command_topic: home/mode/set
+        options:
+          - label: Doma
+            payload: home
+          - label: Večer
+            payload: evening
+          - label: Noc
+            payload: night
+          - label: Odchod
+            payload: away
+
+  - id: analytics
+    title: Data a scény
+    type: grid
+    columns: 2
+    widgets:
+      - id: family_cal
+        type: calendar
+        label: Kalendář
+        span: 2
+
+      - id: power_gauge
+        type: gauge
+        label: Příkon domu
+        icon: bolt
+        state_topic: home/power/watts
+        min: 0
+        max: 3500
+        precision: 0
+        unit: W
+        show_in_standby: true
+
+      - id: temp_chart
+        type: chart
+        label: Vývoj teploty
+        state_topic: home/livingroom/sensor
+        state_json_path: $.temperature
+        precision: 1
+        unit: "°C"
+
+      - id: goodnight_macro
+        type: button
+        label: Dobrou noc
+        subtitle: Vypne světla
+        span: 2
+        confirm: true
+        macro_actions:
+          - widget_id: living_lamp
+            state: OFF
+          - widget_id: main_light
+            state: OFF
+
+  - id: map
+    title: Půdorys
+    type: floorplan
+    floorplan:
+      shapes:
+        - id: room_living
+          kind: room
+          label: Obývák
+          x: 60
+          y: 80
+          w: 480
+          h: 460
+        - id: room_hall
+          kind: room
+          label: Chodba
+          x: 540
+          y: 80
+          w: 380
+          h: 460
+        - id: door_main
+          kind: door
+          x: 540
+          y: 260
+          x2: 540
+          y2: 360
+      pins:
+        - id: pin_temp
+          x: 240
+          y: 260
+          widget:
+            id: fp_living_temp
+            type: sensor
+            label: Teplota
+            state_topic: home/livingroom/sensor
+            state_json_path: $.temperature
+            unit: "°C"
+        - id: pin_lamp
+          x: 340
+          y: 380
+          widget:
+            id: fp_living_lamp
+            type: switch
+            label: Lampa
+            state_topic: local/switch/living_lamp
+            payload_on: "ON"
+            payload_off: "OFF"
+            value_on: "ON"
+            value_off: "OFF"
+            optimistic: true

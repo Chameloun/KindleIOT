@@ -1,0 +1,2292 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>KindleIOT – Návrhář obrazovky</title>
+  <style>
+    :root {
+      --bg: #f1f3f5;
+      --card: #ffffff;
+      --ink: #111111;
+      --muted: #5c636a;
+      --line: #d0d5dd;
+      --ok: #1b7a3d;
+      --err: #b42318;
+      --warn: #b54708;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--ink); }
+    header {
+      background: #111; color: #fff; padding: 12px 20px;
+      display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand h1 { margin: 0; font-size: 18px; }
+    .pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: #333; font-weight: 600; }
+    .pill.ok { background: var(--ok); }
+    .pill.err { background: var(--err); }
+    .pill.dirty { background: var(--warn); }
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+
+    button {
+      background: #111; color: #fff; border: 1px solid #111; padding: 8px 14px;
+      border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;
+    }
+    button:hover { opacity: 0.9; }
+    button.secondary { background: #fff; color: #111; border: 1px solid #bbb; }
+    button.danger { background: #fff; color: var(--err); border: 1px solid #f0b4b0; }
+    button.primary-save { background: #22a052; border-color: #22a052; color: #fff; }
+    button.sm { padding: 4px 8px; font-size: 12px; }
+    button.tool-btn { width: 100%; text-align: left; background: #fff; color: #111; border: 1.5px solid #bbb; margin-bottom: 6px; }
+    button.tool-btn.active { background: #111; color: #fff; border-color: #111; }
+
+    .nav-tabs {
+      background: #fff; border-bottom: 1px solid var(--line);
+      padding: 0 20px; display: flex; gap: 6px; overflow-x: auto;
+    }
+    .nav-tab {
+      background: none; border: none; border-bottom: 3px solid transparent;
+      color: var(--muted); border-radius: 0; padding: 12px 14px; font-size: 14px;
+    }
+    .nav-tab.active { color: var(--ink); border-bottom-color: #111; }
+
+    .tab-pane { display: none; padding: 16px 20px; max-width: 1440px; margin: 0 auto; }
+    .tab-pane.active { display: block; }
+
+    .designer {
+      display: grid;
+      grid-template-columns: 250px minmax(360px, 460px) 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+    .designer.landscape-mode {
+      grid-template-columns: 230px minmax(460px, 590px) 1fr;
+    }
+    @media (max-width: 1080px) {
+      .designer, .designer.landscape-mode { grid-template-columns: 1fr; }
+    }
+    .panel {
+      background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px;
+    }
+    .panel h2 {
+      margin: 0 0 12px 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+    }
+
+    .palette-list { display: flex; flex-direction: column; gap: 7px; }
+    .palette-item {
+      border: 1.5px solid #222; border-radius: 8px; padding: 8px 10px; background: #fff;
+      cursor: grab; display: flex; justify-content: space-between; align-items: center;
+      user-select: none;
+    }
+    .palette-item:hover { background: #f6f6f6; }
+    .palette-item strong { display: block; font-size: 13px; }
+    .palette-item span { font-size: 11px; color: var(--muted); }
+
+    .kindle-shell {
+      background: #222; border-radius: 16px; padding: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    }
+    .kindle-screen {
+      background: #fff; border: 2px solid #000; border-radius: 4px; min-height: 580px;
+      display: flex; flex-direction: column; justify-content: space-between; overflow: hidden;
+    }
+    .k-header {
+      padding: 8px 10px; border-bottom: 2px solid #000; display: flex;
+      justify-content: space-between; align-items: center; font-size: 12px;
+    }
+    .kindle-shell.landscape .kindle-screen {
+      min-height: 440px;
+    }
+    .kindle-shell.landscape .k-grid {
+      min-height: 340px;
+    }
+    .k-grid {
+      flex: 1; padding: 10px; display: grid; gap: 8px; align-content: start;
+      min-height: 460px; transition: background 0.15s;
+    }
+    .k-grid.cols-1 { grid-template-columns: 1fr; }
+    .k-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+    .k-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .k-grid.drag-over-empty { background: #eef6ff; outline: 2px dashed #111; outline-offset: -6px; }
+
+    .k-card {
+      border: 2px solid #111; border-radius: 8px; padding: 8px; background: #fff;
+      box-shadow: 3px 3px 0 #111;
+      min-height: 92px; display: flex; flex-direction: column; justify-content: space-between;
+      cursor: grab; position: relative; user-select: none;
+    }
+    .k-card.span-2 { grid-column: span 2; }
+    .k-card.span-3 { grid-column: span 3; }
+    .k-card.selected { outline: 3px solid #2563eb; outline-offset: 2px; background: #f8fbff; }
+    .k-card.drop-before { box-shadow: inset 0 4px 0 #2563eb, 3px 3px 0 #111; }
+    .k-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
+    .k-card-title { font-weight: 700; font-size: 13px; line-height: 1.2; }
+    .k-card-type {
+      font-size: 10px; text-transform: uppercase; background: #eee; padding: 2px 6px;
+      border-radius: 999px; font-weight: 700; flex-shrink: 0; border: 1px solid #ccc;
+    }
+    .k-card-sub { font-size: 11px; color: #555; margin-top: 2px; word-break: break-all; }
+    .k-card-mock {
+      margin-top: 6px; padding: 4px 8px; border: 1.5px solid #111; background: #f3f3f3;
+      font-size: 11px; text-align: center; font-weight: 700; border-radius: 6px;
+    }
+    .k-card-actions {
+      display: flex; gap: 4px; margin-top: 6px; justify-content: flex-end; opacity: 0.85;
+    }
+    .k-card-actions button { padding: 2px 6px; font-size: 11px; }
+
+    /* Floorplan SVG canvas */
+    .fp-wrap {
+      flex: 1; padding: 8px; display: flex; flex-direction: column; background: #fff;
+    }
+    #fpSvg {
+      width: 100%; height: 470px; border: 2px solid #111; background: #fff;
+      touch-action: none; user-select: none;
+    }
+    .fp-pin { cursor: move; }
+    .fp-shape { cursor: pointer; }
+
+    .k-tabs {
+      border-top: 2px solid #000; padding: 8px; display: flex; gap: 6px; background: #fff;
+    }
+    .k-tab-btn {
+      flex: 1; padding: 7px 6px; border: 2px solid #000; background: #fff; color: #000;
+      font-weight: 700; font-size: 12px; border-radius: 2px; text-align: center; cursor: pointer;
+    }
+    .k-tab-btn.active { background: #000; color: #fff; }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .form-grid .full { grid-column: 1 / -1; }
+    label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: #333; }
+    input[type="text"], input[type="number"], input[type="password"], select, textarea {
+      width: 100%; padding: 7px 9px; border: 1px solid #bfc5cc; border-radius: 6px;
+      font-size: 13px; font-family: inherit; background: #fff;
+    }
+    input[type="checkbox"] { width: 16px; height: 16px; }
+    .check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; padding: 4px 0; }
+    .hint { font-size: 11px; color: var(--muted); font-weight: 400; }
+    .divider { border-top: 1px solid #e5e7eb; margin: 12px 0; }
+
+    .page-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 6px; cursor: pointer;
+    }
+    .page-row.active { border-color: #111; background: #f3f4f6; font-weight: 700; }
+
+    .opt-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; margin-bottom: 6px; }
+
+    .preview-layout { display: grid; grid-template-columns: 360px 1fr; gap: 18px; align-items: start; }
+    @media (max-width: 900px) { .preview-layout { grid-template-columns: 1fr; } }
+    #screenImg { width: 100%; max-width: 340px; border: 3px solid #111; border-radius: 6px; cursor: pointer; display: block; margin: 0 auto; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #eee; word-break: break-all; }
+    #saveToast { font-size: 13px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>KindleIOT</h1>
+      <span id="mqttStatus" class="pill">Načítám…</span>
+      <span id="dirtyBadge" class="pill dirty" style="display:none;">Neuložené změny</span>
+    </div>
+    <div class="header-actions">
+      <span id="saveToast"></span>
+      <button class="primary-save" onclick="saveVisualConfig()">Uložit na Kindle</button>
+    </div>
+  </header>
+
+  <nav class="nav-tabs">
+    <button class="nav-tab active" onclick="switchTab('designer', this)">1. Vizuální návrhář (Drag &amp; Drop)</button>
+    <button class="nav-tab" onclick="switchTab('settings', this)">2. MQTT, Apple Home &amp; Zařízení</button>
+    <button class="nav-tab" onclick="switchTab('preview', this)">3. Živý náhled &amp; Topicy</button>
+    <button class="nav-tab" onclick="switchTab('yaml', this)">4. Pokročilý YAML</button>
+  </nav>
+
+  <datalist id="knownTopics"></datalist>
+
+  <!-- TAB 1: VISUAL DRAG & DROP -->
+  <section id="tab-designer" class="tab-pane active">
+    <div id="designerRoot" class="designer">
+      <!-- LEFT: PALETTE / FLOORPLAN TOOLS & PAGES -->
+      <div style="display:flex; flex-direction:column; gap:14px;">
+        <div class="panel" id="gridPalettePanel">
+          <h2>Přetáhni prvek na plochu</h2>
+          <div class="palette-list">
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'hk_light')" onclick="addWidgetFromPalette('hk_light')">
+              <div><strong>💡 Světlo (Apple Home)</strong><span>Přímé světlo v Apple Domácnosti</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'switch')" onclick="addWidgetFromPalette('switch')">
+              <div><strong>Přepínač (MQTT + Home)</strong><span>Světlo, zásuvka (ZAP/VYP)</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'button')" onclick="addWidgetFromPalette('button')">
+              <div><strong>🎬 Tlačítko / Makro scéna</strong><span>Jednorázová akce nebo více světel</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'weather')" onclick="addWidgetFromPalette('weather')">
+              <div><strong>☀ Počasí &amp; Svátky</strong><span>Předpověď Open-Meteo + jmeniny</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'timer')" onclick="addWidgetFromPalette('timer')">
+              <div><strong>⏱ Časovač / Odpočet</strong><span>Vypnutí za 5 / 15 / 30 min</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'calendar')" onclick="addWidgetFromPalette('calendar')">
+              <div><strong>📅 Kalendář (.ics)</strong><span>Nadcházející události z iCal</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'stepper')" onclick="addWidgetFromPalette('stepper')">
+              <div><strong>Kroky − / +</strong><span>Termostat, jas, žaluzie</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'sensor')" onclick="addWidgetFromPalette('sensor')">
+              <div><strong>Senzor (číslo)</strong><span>Teplota, vlhkost, stav</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'gauge')" onclick="addWidgetFromPalette('gauge')">
+              <div><strong>Budík (Gauge)</strong><span>Obloukový ukazatel min–max</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'chart')" onclick="addWidgetFromPalette('chart')">
+              <div><strong>Graf (Historie)</strong><span>Křivka vývoje hodnot</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'select')" onclick="addWidgetFromPalette('select')">
+              <div><strong>Výběr režimu</strong><span>Přepínání předvoleb</span></div>
+              <span>+</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" id="floorplanToolsPanel" style="display:none;">
+          <h2>Kreslení půdorysu</h2>
+          <button class="tool-btn active" id="tool-select" onclick="setFloorTool('select')">⌖ Vybrat / Přesunout bod</button>
+          <button class="tool-btn" id="tool-room" onclick="setFloorTool('room')">▭ Nakreslit místnost</button>
+          <button class="tool-btn" id="tool-wall" onclick="setFloorTool('wall')">╱ Nakreslit zeď</button>
+          <button class="tool-btn" id="tool-door" onclick="setFloorTool('door')">▯ Dveře / Průchod</button>
+          <button class="tool-btn" id="tool-text" onclick="setFloorTool('text')">Aa Vložit popisek</button>
+          <div class="divider"></div>
+          <h2>Přetáhni na půdorys</h2>
+          <div class="palette-list">
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'hk_light')" onclick="addFloorPin('hk_light', 500, 500)">
+              <div><strong>💡 Světlo (Apple Home)</strong><span>Přímé světlo v Apple Domácnosti</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'sensor')" onclick="addFloorPin('sensor', 500, 500)">
+              <div><strong>Senzor na mapu</strong><span>Teplota, vlhkost, stav</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'switch')" onclick="addFloorPin('switch', 500, 500)">
+              <div><strong>Vypínač na mapu</strong><span>Klepnutím na mapě zap/vyp</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'button')" onclick="addFloorPin('button', 500, 500)">
+              <div><strong>Tlačítko na mapu</strong><span>Akce / scéna v místnosti</span></div>
+              <span>+</span>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            <button class="secondary sm" onclick="loadSampleFloorplan()">Vložit vzorový půdorys</button>
+            <button class="danger sm" onclick="clearFloorplan()">Vymazat půdorys</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Stránky (záložky)</h2>
+          <div id="pagesList"></div>
+          <div style="display:flex; gap:6px; margin-top:8px;">
+            <button class="secondary sm" style="flex:1;" onclick="addPage('grid')">+ Stránka</button>
+            <button class="secondary sm" style="flex:1;" onclick="addPage('floorplan')">+ Půdorys</button>
+          </div>
+          <div id="pageProps" class="divider" style="padding-top:10px;"></div>
+        </div>
+      </div>
+
+      <!-- CENTER: KINDLE CANVAS -->
+      <div id="kindleShell" class="kindle-shell">
+        <div class="kindle-screen">
+          <div class="k-header">
+            <strong id="canvasTitle">IoT Panel</strong>
+            <span id="canvasModeBadge">600 × 800 e-ink</span>
+          </div>
+
+          <div id="kindleGrid" class="k-grid cols-2"
+               ondragover="onGridDragOver(event)"
+               ondragleave="onGridDragLeave(event)"
+               ondrop="onGridDrop(event)">
+          </div>
+
+          <div id="floorplanArea" class="fp-wrap" style="display:none;">
+            <svg id="fpSvg" viewBox="0 0 1000 1000" preserveAspectRatio="none"
+                 ondragover="event.preventDefault()"
+                 ondrop="onFloorDrop(event)"></svg>
+            <div class="hint" style="margin-top:4px; text-align:center;" id="fpHint">
+              Vyber nástroj vlevo nebo přetáhni senzor/vypínač na mapu
+            </div>
+          </div>
+
+          <div id="kindleTabs" class="k-tabs"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: PROPERTY INSPECTOR -->
+      <div class="panel" id="inspectorPanel">
+        <h2>Vlastnosti vybraného prvku</h2>
+        <div id="inspectorBody">
+          <p class="hint">Klikni na prvek vlevo nebo přetáhni nový prvek na plochu.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 2: MQTT & DEVICE SETTINGS -->
+  <section id="tab-settings" class="tab-pane">
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap:18px; align-items:start;">
+      <div class="panel">
+        <h2>Hlavní MQTT instance</h2>
+        <div class="form-grid">
+          <label class="field">
+            ID instance
+            <input type="text" id="mqtt_id" placeholder="default" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            Název (popisek)
+            <input type="text" id="mqtt_name" placeholder="Hlavní broker" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field full">
+            Adresa brokeru (URL)
+            <input type="text" id="mqtt_broker" placeholder="ssl://cluster.s1.eu.hivemq.cloud:8883" oninput="syncSettingsFromUI()" />
+            <span class="hint">Např. <code>tcp://192.168.1.10:1883</code> nebo pro HiveMQ Cloud <code>ssl://xxx.hivemq.cloud:8883</code></span>
+          </label>
+          <label class="field">
+            Uživatelské jméno
+            <input type="text" id="mqtt_user" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            Heslo
+            <input type="password" id="mqtt_pass" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            Client ID
+            <input type="text" id="mqtt_client_id" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            Základní topic (telemetrie Kindlu)
+            <input type="text" id="mqtt_base_topic" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            Keep Alive (s)
+            <input type="number" id="mqtt_keepalive" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            HA Discovery prefix
+            <input type="text" id="mqtt_ha_prefix" oninput="syncSettingsFromUI()" />
+          </label>
+          <div class="full">
+            <label class="check-row"><input type="checkbox" id="mqtt_insecure" onchange="syncSettingsFromUI()" /> Ignorovat neověřený TLS certifikát (self-signed)</label>
+            <label class="check-row"><input type="checkbox" id="mqtt_ha" onchange="syncSettingsFromUI()" /> Zapnout Home Assistant MQTT Discovery</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h2 style="margin:0;">Další MQTT instance</h2>
+          <button class="secondary sm" onclick="addExtraBroker()">+ Přidat MQTT broker</button>
+        </div>
+        <div id="extraBrokersList">
+          <p class="hint">Zatím žádná další instance. Přidej další broker, pokud máš např. HiveMQ Cloud i lokální Mosquitto současně.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <h2 style="margin:0;">Apple Home (HomeKit Bridge)</h2>
+          <span id="hkStatusPill" class="pill">Načítám…</span>
+        </div>
+        <div class="form-grid">
+          <div class="full">
+            <label class="check-row"><input type="checkbox" id="hk_enabled" onchange="syncSettingsFromUI()" /> Zapnout vestavěný Apple HomeKit Bridge</label>
+          </div>
+          <label class="field">
+            8místný párovací PIN kód
+            <input type="text" id="hk_pin" maxlength="8" placeholder="00102003" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            TCP Port HomeKit serveru
+            <input type="number" id="hk_port" placeholder="51827" oninput="syncSettingsFromUI()" />
+          </label>
+          <div class="full">
+            <div style="font-size:12px; font-weight:700; margin:6px 0 6px 0;">Vyber prvky z Kindlu, které se mají zobrazit v Apple Home:</div>
+            <div id="hkWidgetsChecklist" style="max-height:220px; overflow-y:auto; border:1px solid #d0d5dd; border-radius:6px; padding:6px; background:#fff;"></div>
+          </div>
+          <div class="full" style="background:#f8f9fa; border:1px solid #e2e8f0; border-radius:8px; padding:10px; font-size:12px; line-height:1.45;">
+            <strong>Jak ovládat světla v Apple Home (Domácnost):</strong>
+            <ol style="margin:6px 0 8px 18px; padding:0;">
+              <li>Na iPhonu/iPadu otevři aplikaci <strong>Domácnost (Home)</strong> → <strong>+</strong> → <strong>Přidat příslušenství</strong> → <strong>Další možnosti</strong>.</li>
+              <li>Vyber <strong>IoT Panel Bridge</strong> a zadej 8místný PIN výše (výchozí <code>00102003</code>).</li>
+              <li>Každé <strong>Světlo / Přepínač</strong> z Kindlu se v Apple Home objeví jako světlo. Pokud s ním chceš spínat jiné už existující světlo v Apple Home, přidej v Domácnosti automatizaci: <em>Když se zapne/vypne toto světlo → zapni/vypni cílové světlo</em>.</li>
+            </ol>
+            <button class="danger sm" onclick="resetHomeKitPairing()">Resetovat spárování s Apple Home</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Chování Kindlu, Podsvícení &amp; Spořič</h2>
+        <div class="form-grid">
+          <label class="field full">
+            Titulek v horní liště
+            <input type="text" id="dev_title" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            Orientace displeje
+            <select id="dev_orientation" onchange="syncSettingsFromUI()">
+              <option value="portrait">Na výšku (600×800)</option>
+              <option value="landscape">Na šířku (800×600)</option>
+              <option value="landscape_cw">Na šířku – otočeno 180°</option>
+            </select>
+          </label>
+          <label class="field">
+            Barevný motiv (Theme)
+            <select id="dev_theme_mode" onchange="syncSettingsFromUI()">
+              <option value="light">Světlý (klasický e-ink)</option>
+              <option value="dark">Tmavý režim (Dark Mode)</option>
+              <option value="auto_night">Automaticky tmavý v noci</option>
+            </select>
+          </label>
+          <label class="field full">
+            Automatické zhasnutí podsvícení (po nečinnosti)
+            <select id="dev_backlight_timeout" onchange="syncSettingsFromUI()">
+              <option value="0">Vypnuto (podsvícení svítí trvale)</option>
+              <option value="30">Po 30 sekundách nečinnosti</option>
+              <option value="60">Po 1 minutě nečinnosti</option>
+              <option value="120">Po 2 minutách nečinnosti</option>
+              <option value="300">Po 5 minutách nečinnosti</option>
+              <option value="600">Po 10 minutách nečinnosti</option>
+            </select>
+            <span class="hint">Po zhasnutí zůstane e-ink čitelný a první dotyk (nebo alarm) podsvícení opět rozsvítí.</span>
+          </label>
+          <label class="field full">
+            Pohotovostní spořič – Standby (velké hodiny + 4 hlavní senzory)
+            <select id="dev_standby_timeout" onchange="syncSettingsFromUI()">
+              <option value="0">Vypnuto (zůstává na hlavní obrazovce)</option>
+              <option value="60">Po 1 minutě nečinnosti</option>
+              <option value="180">Po 3 minutách nečinnosti</option>
+              <option value="300">Po 5 minutách nečinnosti</option>
+              <option value="600">Po 10 minutách nečinnosti</option>
+              <option value="1800">Po 30 minutách nečinnosti</option>
+            </select>
+          </label>
+          <label class="field">
+            Denní jas po probuzení (0–24)
+            <input type="number" id="dev_day_bright" min="0" max="24" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            Počáteční jas (-1 = dle den/noc)
+            <input type="number" id="dev_bright" min="-1" max="24" oninput="syncSettingsFromUI()" />
+          </label>
+          <div class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:8px; padding:10px;">
+            <label class="check-row"><input type="checkbox" id="dev_night_enabled" onchange="syncSettingsFromUI()" /> 🌙 Noční režim podsvícení (v noci nižší jas po dotyku)</label>
+            <div class="form-grid" style="margin-top:6px;">
+              <label class="field">
+                Noční jas (0–24)
+                <input type="number" id="dev_night_bright" min="0" max="24" oninput="syncSettingsFromUI()" />
+              </label>
+              <label class="field">
+                Noc od – do (hodina 0–23)
+                <div style="display:flex; gap:6px; align-items:center;">
+                  <input type="number" id="dev_night_start" min="0" max="23" oninput="syncSettingsFromUI()" />
+                  <span>–</span>
+                  <input type="number" id="dev_night_end" min="0" max="23" oninput="syncSettingsFromUI()" />
+                </div>
+              </label>
+            </div>
+          </div>
+          <div class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:8px; padding:10px;">
+            <div style="font-size:12px; font-weight:700; margin-bottom:6px;">☀ Předpověď počasí (Open-Meteo bez API klíče) &amp; České svátky</div>
+            <label class="check-row"><input type="checkbox" id="wx_enabled" onchange="syncSettingsFromUI()" /> Zobrazovat předpověď počasí na pohotovostním spořiči a kartách Počasí</label>
+            <div class="form-grid" style="margin-top:6px;">
+              <label class="field">
+                Rychlý výběr města
+                <select onchange="applyCityPreset(this.value); this.value='';">
+                  <option value="">— Vybrat město v ČR —</option>
+                  <option value="Praha|50.0755|14.4378">Praha</option>
+                  <option value="Brno|49.1951|16.6068">Brno</option>
+                  <option value="Ostrava|49.8209|18.2625">Ostrava</option>
+                  <option value="Plzeň|49.7384|13.3736">Plzeň</option>
+                  <option value="Liberec|50.7663|15.0543">Liberec</option>
+                  <option value="Olomouc|49.5938|17.2509">Olomouc</option>
+                  <option value="České Budějovice|48.9745|14.4743">České Budějovice</option>
+                  <option value="Hradec Králové|50.2092|15.8328">Hradec Králové</option>
+                  <option value="Pardubice|50.0343|15.7812">Pardubice</option>
+                  <option value="Zlín|49.2244|17.6627">Zlín</option>
+                  <option value="Ústí nad Labem|50.6607|14.0323">Ústí nad Labem</option>
+                  <option value="Jihlava|49.3961|15.5912">Jihlava</option>
+                  <option value="Karlovy Vary|50.2319|12.8712">Karlovy Vary</option>
+                </select>
+              </label>
+              <label class="field">
+                Název lokality
+                <input type="text" id="wx_name" placeholder="Praha" oninput="syncSettingsFromUI()" />
+              </label>
+              <label class="field">
+                Zeměpisná šířka (Lat)
+                <input type="number" step="any" id="wx_lat" oninput="syncSettingsFromUI()" />
+              </label>
+              <label class="field">
+                Zeměpisná délka (Lon)
+                <input type="number" step="any" id="wx_lon" oninput="syncSettingsFromUI()" />
+              </label>
+            </div>
+          </div>
+          <div class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:8px; padding:10px;">
+            <div style="font-size:12px; font-weight:700; margin-bottom:6px;">📅 Kalendář (iCal / .ics / webcal://)</div>
+            <label class="check-row"><input type="checkbox" id="cal_enabled" onchange="syncSettingsFromUI()" /> Načítat nadcházející události na kartu Kalendář a spořič Standby</label>
+            <label class="field" style="margin-top:6px;">
+              Odkazy na .ics / webcal:// kalendáře (1 URL na řádek)
+              <textarea id="cal_urls" rows="3" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics&#10;webcal://p123-caldav.icloud.com/published/2/..." oninput="syncSettingsFromUI()"></textarea>
+              <span class="hint">Google Kalendář: Nastavení → Tajná adresa ve formátu iCal. Apple iCloud: Veřejný kalendář (webcal://).</span>
+            </label>
+          </div>
+          <div class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:8px; padding:10px;">
+            <div style="font-size:12px; font-weight:700; margin-bottom:6px;">🔒 Bezpečnostní PIN zámek / Dětská pojistka</div>
+            <div class="form-grid">
+              <label class="field">
+                PIN kód (4–8 číslic, prázdné = vypnuto)
+                <input type="text" id="dev_pin" maxlength="8" placeholder="např. 1234" oninput="syncSettingsFromUI()" />
+              </label>
+              <label class="field" style="justify-content:center;">
+                <span class="check-row" style="margin-top:16px;"><input type="checkbox" id="dev_pin_standby" onchange="syncSettingsFromUI()" /> Vyžadovat PIN při probuzení ze spořiče</span>
+              </label>
+            </div>
+          </div>
+          <label class="field">
+            Šířka (px)
+            <input type="number" id="dev_width" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            Výška (px)
+            <input type="number" id="dev_height" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            Plný e-ink refresh každých N překreslení
+            <input type="number" id="dev_refresh" min="1" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            Interval telemetrie (s)
+            <input type="number" id="dev_tele" min="5" oninput="syncSettingsFromUI()" />
+          </label>
+          <div class="full">
+            <label class="check-row"><input type="checkbox" id="dev_sleep" onchange="syncSettingsFromUI()" /> Blokovat systémové uspání Kindlu (trvale zapnutý panel)</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>⏰ Denní plány a automatizace</h2>
+        <p class="hint" style="margin-top:0;">Naplánuj automatické zapnutí nebo vypnutí prvků v konkrétní čas a dny v týdnu (vyhodnocuje přímo Kindle).</p>
+        <div id="schedulesList" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;"></div>
+        <button class="secondary sm" onclick="addSchedule()">+ Přidat denní plán</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 3: LIVE PREVIEW & TOPICS -->
+  <section id="tab-preview" class="tab-pane">
+    <div class="preview-layout">
+      <div class="panel" style="text-align:center;">
+        <h2>Živý displej Kindlu (kliknutím ovládáš)</h2>
+        <img id="screenImg" src="/api/screen.png" alt="Kindle screen" />
+        <div style="margin-top:10px; display:flex; justify-content:center; gap:8px;">
+          <button class="secondary sm" onclick="refreshScreen()">Obnovit náhled</button>
+        </div>
+        <p id="hwInfo" class="hint" style="margin-top:8px;"></p>
+      </div>
+      <div class="panel">
+        <h2>Stav MQTT instancí &amp; zachycené topicy</h2>
+        <div id="brokerPills" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;"></div>
+        <table>
+          <thead><tr><th>Broker</th><th>Topic</th><th>Poslední payload</th><th>Čas</th><th>Akce</th></tr></thead>
+          <tbody id="topicsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 4: ADVANCED YAML -->
+  <section id="tab-yaml" class="tab-pane">
+    <div class="panel">
+      <h2>Pokročilý YAML editor (záloha / přímá editace)</h2>
+      <textarea id="yamlEditor" spellcheck="false" style="height:460px; font-family:ui-monospace, monospace;"></textarea>
+      <div style="margin-top:10px; display:flex; gap:10px; align-items:center;">
+        <button onclick="saveYAML()">Uložit YAML a použít</button>
+        <button class="secondary" onclick="loadYAML()">Znovu načíst YAML</button>
+        <span id="yamlMsg" class="hint"></span>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    let cfg = null;
+    let activePageIdx = 0;
+    let selectedWidgetIdx = -1;
+    let selectedShapeIdx = -1;
+    let selectedPinIdx = -1;
+    let dragSource = null;
+    let isDirty = false;
+    let lastTopicsMap = {};
+
+    // Floorplan drawing state
+    let fpTool = 'select'; // select | room | wall | door | text
+    let fpDrag = null;     // { kind: 'draw', x0, y0, x1, y1 } | { kind: 'pin', idx }
+
+    function markDirty(dirty = true) {
+      isDirty = dirty;
+      document.getElementById('dirtyBadge').style.display = dirty ? 'inline-block' : 'none';
+    }
+
+    function switchTab(id, btn) {
+      document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + id).classList.add('active');
+      if (id === 'yaml') loadYAML();
+      if (id === 'preview') refreshScreen();
+    }
+
+    async function loadConfigJSON() {
+      const res = await fetch('/api/config/json');
+      cfg = await res.json();
+      if (!cfg.pages || cfg.pages.length === 0) {
+        cfg.pages = [{ id: 'home', title: 'Přehled', type: 'grid', columns: 2, widgets: [] }];
+      }
+      activePageIdx = Math.min(activePageIdx, cfg.pages.length - 1);
+      selectFirstItemOnPage();
+      populateSettingsUI();
+      renderDesigner();
+      markDirty(false);
+    }
+
+    function selectFirstItemOnPage() {
+      const p = cfg.pages[activePageIdx];
+      selectedWidgetIdx = -1;
+      selectedPinIdx = -1;
+      selectedShapeIdx = -1;
+      if ((p.type || 'grid') === 'floorplan') {
+        if (p.floorplan?.pins?.length) selectedPinIdx = 0;
+        else if (p.floorplan?.shapes?.length) selectedShapeIdx = 0;
+      } else if (p.widgets?.length) {
+        selectedWidgetIdx = 0;
+      }
+    }
+
+    async function saveVisualConfig() {
+      const toast = document.getElementById('saveToast');
+      toast.textContent = 'Ukládám…';
+      toast.style.color = '#fff';
+      const res = await fetch('/api/config/json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg)
+      });
+      if (res.ok) {
+        cfg = await res.json();
+        markDirty(false);
+        renderDesigner();
+        toast.textContent = 'Uloženo na Kindle!';
+        toast.style.color = '#86efac';
+        setTimeout(() => { toast.textContent = ''; }, 3000);
+        setTimeout(refreshScreen, 200);
+      } else {
+        toast.textContent = 'Chyba: ' + await res.text();
+        toast.style.color = '#fca5a5';
+      }
+    }
+
+    function populateSettingsUI() {
+      if (!cfg) return;
+      document.getElementById('mqtt_id').value = cfg.mqtt.id || 'default';
+      document.getElementById('mqtt_name').value = cfg.mqtt.name || 'Hlavní broker';
+      document.getElementById('mqtt_broker').value = cfg.mqtt.broker || '';
+      document.getElementById('mqtt_user').value = cfg.mqtt.username || '';
+      document.getElementById('mqtt_pass').value = cfg.mqtt.password || '';
+      document.getElementById('mqtt_client_id').value = cfg.mqtt.client_id || '';
+      document.getElementById('mqtt_base_topic').value = cfg.mqtt.base_topic || '';
+      document.getElementById('mqtt_keepalive').value = cfg.mqtt.keep_alive_sec || 30;
+      document.getElementById('mqtt_ha_prefix').value = cfg.mqtt.discovery_prefix || 'homeassistant';
+      document.getElementById('mqtt_insecure').checked = !!cfg.mqtt.insecure_tls;
+      document.getElementById('mqtt_ha').checked = !!cfg.mqtt.homeassistant_discovery;
+      renderExtraBrokers();
+
+      cfg.homekit = cfg.homekit || { enabled: true, pin: '00102003', port: 51827 };
+      document.getElementById('hk_enabled').checked = cfg.homekit.enabled !== false;
+      document.getElementById('hk_pin').value = cfg.homekit.pin || '00102003';
+      document.getElementById('hk_port').value = cfg.homekit.port || 51827;
+      renderHomeKitChecklist();
+
+      document.getElementById('dev_title').value = cfg.device.title || 'IoT Panel';
+      document.getElementById('dev_orientation').value = cfg.device.orientation || 'portrait';
+      document.getElementById('dev_theme_mode').value = cfg.device.theme_mode || 'light';
+      document.getElementById('dev_width').value = cfg.device.width || 600;
+      document.getElementById('dev_height').value = cfg.device.height || 800;
+      document.getElementById('dev_bright').value = cfg.device.initial_brightness ?? -1;
+      document.getElementById('dev_backlight_timeout').value = String(cfg.device.backlight_timeout_sec || 0);
+      document.getElementById('dev_standby_timeout').value = String(cfg.device.standby_timeout_sec || 0);
+      document.getElementById('dev_day_bright').value = cfg.device.day_brightness ?? 14;
+      document.getElementById('dev_night_enabled').checked = !!cfg.device.night_mode_enabled;
+      document.getElementById('dev_night_bright').value = cfg.device.night_brightness ?? 3;
+      document.getElementById('dev_night_start').value = cfg.device.night_start_hour ?? 22;
+      document.getElementById('dev_night_end').value = cfg.device.night_end_hour ?? 6;
+      document.getElementById('dev_pin').value = cfg.device.pin_code || '';
+      document.getElementById('dev_pin_standby').checked = !!cfg.device.pin_lock_standby;
+      document.getElementById('dev_refresh').value = cfg.device.full_refresh_every || 20;
+      document.getElementById('dev_tele').value = cfg.device.telemetry_interval_sec || 60;
+      document.getElementById('dev_sleep').checked = !!cfg.device.prevent_sleep;
+
+      cfg.weather = cfg.weather || { enabled: true, location_name: 'Praha', latitude: 50.0755, longitude: 14.4378 };
+      document.getElementById('wx_enabled').checked = cfg.weather.enabled !== false;
+      document.getElementById('wx_name').value = cfg.weather.location_name || 'Praha';
+      document.getElementById('wx_lat').value = cfg.weather.latitude ?? 50.0755;
+      document.getElementById('wx_lon').value = cfg.weather.longitude ?? 14.4378;
+
+      cfg.calendar = cfg.calendar || { enabled: false, urls: [] };
+      document.getElementById('cal_enabled').checked = !!cfg.calendar.enabled;
+      document.getElementById('cal_urls').value = (cfg.calendar.urls || []).join('\n');
+
+      renderSchedulesList();
+    }
+
+    function applyCityPreset(val) {
+      if (!val || !cfg) return;
+      const [name, lat, lon] = val.split('|');
+      document.getElementById('wx_name').value = name;
+      document.getElementById('wx_lat').value = parseFloat(lat);
+      document.getElementById('wx_lon').value = parseFloat(lon);
+      syncSettingsFromUI();
+    }
+
+    function syncSettingsFromUI() {
+      if (!cfg) return;
+      cfg.mqtt.id = document.getElementById('mqtt_id').value.trim() || 'default';
+      cfg.mqtt.name = document.getElementById('mqtt_name').value.trim() || 'Hlavní broker';
+      cfg.mqtt.broker = document.getElementById('mqtt_broker').value.trim();
+      cfg.mqtt.username = document.getElementById('mqtt_user').value;
+      cfg.mqtt.password = document.getElementById('mqtt_pass').value;
+      cfg.mqtt.client_id = document.getElementById('mqtt_client_id').value.trim();
+      cfg.mqtt.base_topic = document.getElementById('mqtt_base_topic').value.trim();
+      cfg.mqtt.keep_alive_sec = parseInt(document.getElementById('mqtt_keepalive').value, 10) || 30;
+      cfg.mqtt.discovery_prefix = document.getElementById('mqtt_ha_prefix').value.trim() || 'homeassistant';
+      cfg.mqtt.insecure_tls = document.getElementById('mqtt_insecure').checked;
+      cfg.mqtt.homeassistant_discovery = document.getElementById('mqtt_ha').checked;
+
+      cfg.homekit = cfg.homekit || {};
+      cfg.homekit.enabled = document.getElementById('hk_enabled').checked;
+      cfg.homekit.pin = document.getElementById('hk_pin').value.trim() || '00102003';
+      cfg.homekit.port = parseInt(document.getElementById('hk_port').value, 10) || 51827;
+
+      const prevOrient = cfg.device.orientation || 'portrait';
+      cfg.device.title = document.getElementById('dev_title').value || 'IoT Panel';
+      cfg.device.orientation = document.getElementById('dev_orientation').value || 'portrait';
+      cfg.device.theme_mode = document.getElementById('dev_theme_mode').value || 'light';
+      cfg.device.width = parseInt(document.getElementById('dev_width').value, 10) || 600;
+      cfg.device.height = parseInt(document.getElementById('dev_height').value, 10) || 800;
+      cfg.device.initial_brightness = parseInt(document.getElementById('dev_bright').value, 10);
+      if (Number.isNaN(cfg.device.initial_brightness)) cfg.device.initial_brightness = -1;
+      cfg.device.backlight_timeout_sec = parseInt(document.getElementById('dev_backlight_timeout').value, 10) || 0;
+      cfg.device.standby_timeout_sec = parseInt(document.getElementById('dev_standby_timeout').value, 10) || 0;
+      cfg.device.day_brightness = parseInt(document.getElementById('dev_day_bright').value, 10);
+      if (Number.isNaN(cfg.device.day_brightness)) cfg.device.day_brightness = 14;
+      cfg.device.night_mode_enabled = document.getElementById('dev_night_enabled').checked;
+      cfg.device.night_brightness = parseInt(document.getElementById('dev_night_bright').value, 10);
+      if (Number.isNaN(cfg.device.night_brightness)) cfg.device.night_brightness = 3;
+      cfg.device.night_start_hour = parseInt(document.getElementById('dev_night_start').value, 10);
+      if (Number.isNaN(cfg.device.night_start_hour)) cfg.device.night_start_hour = 22;
+      cfg.device.night_end_hour = parseInt(document.getElementById('dev_night_end').value, 10);
+      if (Number.isNaN(cfg.device.night_end_hour)) cfg.device.night_end_hour = 6;
+      cfg.device.pin_code = document.getElementById('dev_pin').value.trim();
+      cfg.device.pin_lock_standby = document.getElementById('dev_pin_standby').checked;
+      cfg.device.full_refresh_every = parseInt(document.getElementById('dev_refresh').value, 10) || 20;
+      cfg.device.telemetry_interval_sec = parseInt(document.getElementById('dev_tele').value, 10) || 60;
+      cfg.device.prevent_sleep = document.getElementById('dev_sleep').checked;
+
+      cfg.weather = cfg.weather || {};
+      cfg.weather.enabled = document.getElementById('wx_enabled').checked;
+      cfg.weather.location_name = document.getElementById('wx_name').value.trim() || 'Praha';
+      cfg.weather.latitude = parseFloat(document.getElementById('wx_lat').value) || 50.0755;
+      cfg.weather.longitude = parseFloat(document.getElementById('wx_lon').value) || 14.4378;
+
+      cfg.calendar = cfg.calendar || {};
+      cfg.calendar.enabled = document.getElementById('cal_enabled').checked;
+      cfg.calendar.urls = document.getElementById('cal_urls').value
+        .split('\n').map(s => s.trim()).filter(Boolean);
+
+      document.getElementById('canvasTitle').textContent = cfg.device.title;
+      markDirty(true);
+      if (prevOrient !== cfg.device.orientation) {
+        renderDesigner();
+      } else {
+        renderInspector();
+      }
+    }
+
+    function collectAllSwitches() {
+      const out = [];
+      (cfg?.pages || []).forEach(pg => {
+        (pg.widgets || []).forEach(sw => {
+          if (sw.type === 'switch') {
+            out.push({ id: sw.id, name: `${sw.label || sw.id}${sw.subtitle ? ' (' + sw.subtitle + ')' : ''}` });
+          }
+        });
+        (pg.floorplan?.pins || []).forEach(pin => {
+          if (pin.widget?.type === 'switch') {
+            out.push({ id: pin.widget.id, name: `${pin.widget.label || pin.widget.id} (mapa)` });
+          }
+        });
+      });
+      return out;
+    }
+
+    function renderSchedulesList() {
+      const box = document.getElementById('schedulesList');
+      if (!box || !cfg) return;
+      cfg.schedules = cfg.schedules || [];
+      const switches = collectAllSwitches();
+      const dayLabels = [[1, 'Po'], [2, 'Út'], [3, 'St'], [4, 'Čt'], [5, 'Pá'], [6, 'So'], [7, 'Ne']];
+
+      if (cfg.schedules.length === 0) {
+        box.innerHTML = '<div class="hint">Zatím nejsou nastaveny žádné denní plány.</div>';
+        return;
+      }
+
+      box.innerHTML = cfg.schedules.map((sc, idx) => {
+        const hh = String(sc.hour ?? 7).padStart(2, '0');
+        const mm = String(sc.minute ?? 0).padStart(2, '0');
+        const swOpts = ['<option value="">(vlastní MQTT topic níže)</option>']
+          .concat(switches.map(sw => `<option value="${escapeAttr(sw.id)}" ${sc.widget_id === sw.id ? 'selected' : ''}>${escapeHtml(sw.name)}</option>`))
+          .join('');
+        const daysSet = new Set(sc.days || []);
+        const dayBtns = dayLabels.map(([num, lbl]) => {
+          const active = daysSet.has(num);
+          return `<button type="button" class="${active ? 'primary' : 'secondary'} sm" style="padding:2px 6px;" onclick="toggleScheduleDay(${idx}, ${num})">${lbl}</button>`;
+        }).join('');
+
+        return `
+          <div style="border:1px solid #d0d5dd; border-radius:8px; padding:10px; background:#f8f9fa;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+              <label class="check-row" style="margin:0; flex:1;">
+                <input type="checkbox" ${sc.enabled !== false ? 'checked' : ''} onchange="cfg.schedules[${idx}].enabled=this.checked; markDirty(true);" />
+                <input type="text" value="${escapeAttr(sc.name || '')}" placeholder="Název plánu" oninput="cfg.schedules[${idx}].name=this.value; markDirty(true);" />
+              </label>
+              <input type="time" value="${hh}:${mm}" style="width:105px;" onchange="setScheduleTime(${idx}, this.value)" />
+              <button type="button" class="danger sm" onclick="deleteSchedule(${idx})">✕</button>
+            </div>
+            <div style="display:flex; gap:4px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+              <span class="hint" style="margin-right:4px;">Dny ${(sc.days && sc.days.length) ? '' : '(každý den)'}:</span>
+              ${dayBtns}
+            </div>
+            <div class="form-grid">
+              <label class="field">Cílový přepínač / prvek
+                <select onchange="cfg.schedules[${idx}].widget_id=this.value; markDirty(true); renderSchedulesList();">${swOpts}</select>
+              </label>
+              <label class="field">Akce
+                <select onchange="cfg.schedules[${idx}].state=this.value; markDirty(true);">
+                  <option value="ON" ${sc.state==='ON'?'selected':''}>ZAPNOUT (ON)</option>
+                  <option value="OFF" ${(!sc.state||sc.state==='OFF')?'selected':''}>VYPNOUT (OFF)</option>
+                  <option value="TOGGLE" ${sc.state==='TOGGLE'?'selected':''}>PŘEPNOUT</option>
+                </select>
+              </label>
+              ${!sc.widget_id ? `
+              <label class="field">MQTT Topic
+                <input type="text" list="knownTopics" value="${escapeAttr(sc.topic || '')}" placeholder="home/light/set" oninput="cfg.schedules[${idx}].topic=this.value; markDirty(true);" />
+              </label>
+              <label class="field">MQTT Payload
+                <input type="text" value="${escapeAttr(sc.payload || 'ON')}" oninput="cfg.schedules[${idx}].payload=this.value; markDirty(true);" />
+              </label>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function addSchedule() {
+      if (!cfg) return;
+      cfg.schedules = cfg.schedules || [];
+      const sws = collectAllSwitches();
+      cfg.schedules.push({
+        id: 'sched_' + Math.random().toString(36).slice(2, 7),
+        name: 'Nový denní plán',
+        enabled: true,
+        hour: 22,
+        minute: 0,
+        days: [],
+        widget_id: sws.length ? sws[0].id : '',
+        state: 'OFF'
+      });
+      markDirty(true);
+      renderSchedulesList();
+    }
+
+    function deleteSchedule(idx) {
+      cfg.schedules.splice(idx, 1);
+      markDirty(true);
+      renderSchedulesList();
+    }
+
+    function setScheduleTime(idx, val) {
+      const parts = String(val || '00:00').split(':');
+      cfg.schedules[idx].hour = parseInt(parts[0], 10) || 0;
+      cfg.schedules[idx].minute = parseInt(parts[1], 10) || 0;
+      markDirty(true);
+    }
+
+    function toggleScheduleDay(idx, dayNum) {
+      const sc = cfg.schedules[idx];
+      sc.days = sc.days || [];
+      const pos = sc.days.indexOf(dayNum);
+      if (pos >= 0) sc.days.splice(pos, 1);
+      else sc.days.push(dayNum);
+      sc.days.sort((a, b) => a - b);
+      markDirty(true);
+      renderSchedulesList();
+    }
+
+    function getAllBrokers() {
+      if (!cfg) return [];
+      const primary = {
+        id: cfg.mqtt.id || 'default',
+        name: cfg.mqtt.name || 'Hlavní broker',
+        broker: cfg.mqtt.broker || ''
+      };
+      return [primary, ...(cfg.mqtt.brokers || [])];
+    }
+
+    function addExtraBroker() {
+      if (!cfg) return;
+      cfg.mqtt.brokers = cfg.mqtt.brokers || [];
+      const n = cfg.mqtt.brokers.length + 2;
+      cfg.mqtt.brokers.push({
+        id: 'broker_' + n,
+        name: 'Broker ' + n,
+        broker: 'tcp://192.168.1.10:1883',
+        client_id: 'kindleiot-' + n,
+        username: '',
+        password: '',
+        insecure_tls: false,
+        keep_alive_sec: 30,
+        base_topic: 'kindleiot/panel_' + n
+      });
+      markDirty(true);
+      renderExtraBrokers();
+      renderInspector();
+    }
+
+    function deleteExtraBroker(idx) {
+      cfg.mqtt.brokers.splice(idx, 1);
+      markDirty(true);
+      renderExtraBrokers();
+      renderInspector();
+    }
+
+    function renderExtraBrokers() {
+      const box = document.getElementById('extraBrokersList');
+      const list = cfg?.mqtt?.brokers || [];
+      if (!list.length) {
+        box.innerHTML = '<p class="hint">Zatím žádná další instance. Přidej další broker, pokud máš např. HiveMQ Cloud i lokální Mosquitto současně.</p>';
+        return;
+      }
+      box.innerHTML = list.map((b, i) => `
+        <div style="border:1px solid #d0d5dd; border-radius:8px; padding:10px; margin-bottom:10px; background:#fafafa;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <strong>${escapeHtml(b.name || b.id)} (<code>${escapeHtml(b.id)}</code>)</strong>
+            <button class="danger sm" onclick="deleteExtraBroker(${i})">Smazat</button>
+          </div>
+          <div class="form-grid">
+            <label class="field">ID instance
+              <input type="text" value="${escapeAttr(b.id || '')}" oninput="cfg.mqtt.brokers[${i}].id=this.value.trim(); markDirty(true); renderInspector();" />
+            </label>
+            <label class="field">Název
+              <input type="text" value="${escapeAttr(b.name || '')}" oninput="cfg.mqtt.brokers[${i}].name=this.value; markDirty(true); renderInspector();" />
+            </label>
+            <label class="field full">Adresa brokeru (URL)
+              <input type="text" value="${escapeAttr(b.broker || '')}" oninput="cfg.mqtt.brokers[${i}].broker=this.value.trim(); markDirty(true);" />
+            </label>
+            <label class="field">Uživatelské jméno
+              <input type="text" value="${escapeAttr(b.username || '')}" oninput="cfg.mqtt.brokers[${i}].username=this.value; markDirty(true);" />
+            </label>
+            <label class="field">Heslo
+              <input type="password" value="${escapeAttr(b.password || '')}" oninput="cfg.mqtt.brokers[${i}].password=this.value; markDirty(true);" />
+            </label>
+            <label class="field">Client ID
+              <input type="text" value="${escapeAttr(b.client_id || '')}" oninput="cfg.mqtt.brokers[${i}].client_id=this.value.trim(); markDirty(true);" />
+            </label>
+            <label class="field">Keep Alive (s)
+              <input type="number" value="${b.keep_alive_sec || 30}" oninput="cfg.mqtt.brokers[${i}].keep_alive_sec=parseInt(this.value,10)||30; markDirty(true);" />
+            </label>
+            <div class="full">
+              <label class="check-row"><input type="checkbox" ${b.insecure_tls ? 'checked' : ''} onchange="cfg.mqtt.brokers[${i}].insecure_tls=this.checked; markDirty(true);" /> Ignorovat neověřený TLS certifikát</label>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderHomeKitChecklist() {
+      const box = document.getElementById('hkWidgetsChecklist');
+      if (!box || !cfg) return;
+      const items = [];
+      (cfg.pages || []).forEach((p, pi) => {
+        if ((p.type || 'grid') === 'floorplan') {
+          (p.floorplan?.pins || []).forEach((pin, ki) => {
+            const w = pin.widget;
+            if (w && (w.type === 'switch' || w.type === 'sensor' || w.type === 'gauge' || w.type === 'chart')) {
+              items.push({ pageTitle: p.title, w, setFn: `cfg.pages[${pi}].floorplan.pins[${ki}].widget` });
+            }
+          });
+        } else {
+          (p.widgets || []).forEach((w, wi) => {
+            if (w && (w.type === 'switch' || w.type === 'sensor' || w.type === 'gauge' || w.type === 'chart')) {
+              items.push({ pageTitle: p.title, w, setFn: `cfg.pages[${pi}].widgets[${wi}]` });
+            }
+          });
+        }
+      });
+
+      if (!items.length) {
+        box.innerHTML = '<div class="hint">Na stránkách zatím nejsou žádné přepínače ani senzory.</div>';
+        return;
+      }
+
+      box.innerHTML = items.map(it => {
+        const w = it.w;
+        const typeSelect = w.type === 'switch' ? `
+          <select style="width:auto; padding:3px 6px; font-size:12px;" onchange="${it.setFn}.homekit_type=this.value; markDirty(true); renderInspector();">
+            <option value="lightbulb" ${(!w.homekit_type || w.homekit_type==='lightbulb')?'selected':''}>💡 Světlo</option>
+            <option value="switch" ${w.homekit_type==='switch'?'selected':''}>🔘 Vypínač</option>
+            <option value="outlet" ${w.homekit_type==='outlet'?'selected':''}>🔌 Zásuvka</option>
+          </select>
+        ` : '<span class="hint">🌡 Teploměr</span>';
+
+        return `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:5px 4px; border-bottom:1px solid #f0f0f0;">
+            <label class="check-row" style="margin:0; font-weight:500;">
+              <input type="checkbox" ${w.homekit ? 'checked' : ''} onchange="${it.setFn}.homekit=this.checked; markDirty(true); renderDesigner();" />
+              <span><strong>${escapeHtml(w.label || w.id)}</strong> <span class="hint">(${escapeHtml(it.pageTitle)})</span></span>
+            </label>
+            ${typeSelect}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function createDefaultWidget(type, topicHint) {
+      const uid = type + '_' + Math.random().toString(36).slice(2, 6);
+      if (type === 'hk_light') {
+        return {
+          id: uid,
+          type: 'switch',
+          label: 'Světlo',
+          subtitle: 'Apple Home',
+          span: 1,
+          state_topic: 'local/switch/' + uid,
+          command_topic: '',
+          payload_on: 'ON',
+          payload_off: 'OFF',
+          value_on: 'ON',
+          value_off: 'OFF',
+          optimistic: true,
+          homekit: true,
+          homekit_type: 'lightbulb'
+        };
+      }
+      const base = { id: uid, type, label: 'Nový prvek', span: 1 };
+      if (type === 'switch') {
+        return { ...base, label: 'Přepínač', state_topic: topicHint || 'home/light/state', command_topic: (topicHint || 'home/light') + '/set', payload_on: 'ON', payload_off: 'OFF', value_on: 'ON', value_off: 'OFF' };
+      }
+      if (type === 'button') {
+        return { ...base, label: 'Tlačítko', command_topic: topicHint || 'home/scene/set', payload: 'PRESS', confirm: false };
+      }
+      if (type === 'stepper') {
+        return { ...base, label: 'Termostat', span: 2, state_topic: topicHint || 'home/thermostat/target', command_topic: (topicHint || 'home/thermostat') + '/set', command_template: '{{value}}', min: 15, max: 28, step: 0.5, precision: 1, unit: '°C' };
+      }
+      if (type === 'gauge') {
+        return { ...base, label: 'Budík', state_topic: topicHint || 'home/power', min: 0, max: 100, precision: 1, unit: '%' };
+      }
+      if (type === 'chart') {
+        return { ...base, label: 'Graf vývoje', span: 2, state_topic: topicHint || 'home/temperature', precision: 1, unit: '°C' };
+      }
+      if (type === 'weather') {
+        return { ...base, type: 'weather', label: 'Počasí', span: 2 };
+      }
+      if (type === 'timer') {
+        return { ...base, type: 'timer', label: 'Časovač', span: 1, target_widget_id: '', target_state: 'OFF', timer_presets: [5, 15, 30] };
+      }
+      if (type === 'calendar') {
+        return { ...base, type: 'calendar', label: 'Kalendář', span: 2 };
+      }
+      if (type === 'select') {
+        return { ...base, label: 'Režim', span: 2, state_topic: topicHint || 'home/mode/state', command_topic: (topicHint || 'home/mode') + '/set', options: [{ label: 'Doma', payload: 'home' }, { label: 'Noc', payload: 'night' }] };
+      }
+      return { ...base, type: 'sensor', label: 'Senzor', state_topic: topicHint || 'home/sensor/temp', unit: '°C', stale_seconds: 600 };
+    }
+
+    // Grid Drag & Drop
+    function onPaletteDragStart(ev, type) {
+      dragSource = { kind: 'palette', type };
+      ev.dataTransfer.effectAllowed = 'copy';
+      ev.dataTransfer.setData('text/plain', type);
+    }
+
+    function onWidgetDragStart(ev, idx) {
+      dragSource = { kind: 'widget', idx };
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/plain', String(idx));
+    }
+
+    function onGridDragOver(ev) {
+      ev.preventDefault();
+      document.getElementById('kindleGrid').classList.add('drag-over-empty');
+    }
+
+    function onGridDragLeave() {
+      document.getElementById('kindleGrid').classList.remove('drag-over-empty');
+    }
+
+    function onGridDrop(ev) {
+      ev.preventDefault();
+      document.getElementById('kindleGrid').classList.remove('drag-over-empty');
+      if (!dragSource) return;
+      const page = cfg.pages[activePageIdx];
+      page.widgets = page.widgets || [];
+      if (dragSource.kind === 'palette') {
+        page.widgets.push(createDefaultWidget(dragSource.type));
+        selectedWidgetIdx = page.widgets.length - 1;
+      } else if (dragSource.kind === 'widget') {
+        const [moved] = page.widgets.splice(dragSource.idx, 1);
+        page.widgets.push(moved);
+        selectedWidgetIdx = page.widgets.length - 1;
+      }
+      dragSource = null;
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function onCardDragOver(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      document.querySelectorAll('.k-card').forEach(c => c.classList.remove('drop-before'));
+      ev.currentTarget.classList.add('drop-before');
+    }
+
+    function onCardDrop(ev, targetIdx) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      document.querySelectorAll('.k-card').forEach(c => c.classList.remove('drop-before'));
+      if (!dragSource) return;
+      const page = cfg.pages[activePageIdx];
+      page.widgets = page.widgets || [];
+      if (dragSource.kind === 'palette') {
+        page.widgets.splice(targetIdx, 0, createDefaultWidget(dragSource.type));
+        selectedWidgetIdx = targetIdx;
+      } else if (dragSource.kind === 'widget') {
+        const fromIdx = dragSource.idx;
+        if (fromIdx !== targetIdx) {
+          const [moved] = page.widgets.splice(fromIdx, 1);
+          const insertAt = fromIdx < targetIdx ? targetIdx - 1 : targetIdx;
+          page.widgets.splice(insertAt, 0, moved);
+          selectedWidgetIdx = insertAt;
+        }
+      }
+      dragSource = null;
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function addWidgetFromPalette(type, topicHint) {
+      const page = cfg.pages[activePageIdx];
+      if ((page.type || 'grid') === 'floorplan') {
+        addFloorPin(type, 500, 500, topicHint);
+        return;
+      }
+      page.widgets = page.widgets || [];
+      page.widgets.push(createDefaultWidget(type, topicHint));
+      selectedWidgetIdx = page.widgets.length - 1;
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function moveWidget(idx, delta) {
+      const ws = cfg.pages[activePageIdx].widgets;
+      const next = idx + delta;
+      if (next < 0 || next >= ws.length) return;
+      [ws[idx], ws[next]] = [ws[next], ws[idx]];
+      selectedWidgetIdx = next;
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function deleteWidget(idx) {
+      const ws = cfg.pages[activePageIdx].widgets;
+      ws.splice(idx, 1);
+      if (selectedWidgetIdx >= ws.length) selectedWidgetIdx = ws.length - 1;
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function duplicateWidget(idx) {
+      const ws = cfg.pages[activePageIdx].widgets;
+      const copy = JSON.parse(JSON.stringify(ws[idx]));
+      copy.id = copy.type + '_' + Math.random().toString(36).slice(2, 6);
+      copy.label = copy.label + ' (kopie)';
+      ws.splice(idx + 1, 0, copy);
+      selectedWidgetIdx = idx + 1;
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function addPage(kind) {
+      const n = cfg.pages.length + 1;
+      if (kind === 'floorplan') {
+        cfg.pages.push({
+          id: 'fp_' + n,
+          title: 'Půdorys',
+          type: 'floorplan',
+          columns: 2,
+          widgets: [],
+          floorplan: { shapes: [], pins: [] }
+        });
+      } else {
+        cfg.pages.push({ id: 'page_' + n, title: 'Stránka ' + n, type: 'grid', columns: 2, widgets: [] });
+      }
+      activePageIdx = cfg.pages.length - 1;
+      selectFirstItemOnPage();
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function deletePage(idx) {
+      if (cfg.pages.length <= 1) return alert('Musí zůstat alespoň jedna stránka.');
+      cfg.pages.splice(idx, 1);
+      activePageIdx = Math.min(activePageIdx, cfg.pages.length - 1);
+      selectFirstItemOnPage();
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function setPageType(newType) {
+      const p = cfg.pages[activePageIdx];
+      p.type = newType;
+      if (newType === 'floorplan' && !p.floorplan) {
+        p.floorplan = { shapes: [], pins: [] };
+      }
+      selectFirstItemOnPage();
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function renderDesigner() {
+      if (!cfg) return;
+      document.getElementById('canvasTitle').textContent = cfg.device.title || 'IoT Panel';
+      const page = cfg.pages[activePageIdx];
+      const isFP = (page.type || 'grid') === 'floorplan';
+      const isLand = cfg.device.orientation === 'landscape' || cfg.device.orientation === 'landscape_cw';
+
+      document.getElementById('designerRoot').classList.toggle('landscape-mode', isLand);
+      document.getElementById('kindleShell').classList.toggle('landscape', isLand);
+
+      document.getElementById('gridPalettePanel').style.display = isFP ? 'none' : 'block';
+      document.getElementById('floorplanToolsPanel').style.display = isFP ? 'block' : 'none';
+      document.getElementById('kindleGrid').style.display = isFP ? 'none' : 'grid';
+      document.getElementById('floorplanArea').style.display = isFP ? 'flex' : 'none';
+      document.getElementById('canvasModeBadge').textContent = isFP
+        ? 'Půdorys budovy'
+        : (isLand ? '800 × 600 na šířku' : '600 × 800 e-ink');
+
+      renderPagesList();
+      if (isFP) {
+        renderFloorplanSVG();
+      } else {
+        renderKindleGrid();
+      }
+      renderKindleTabs();
+      renderInspector();
+      renderHomeKitChecklist();
+      renderSchedulesList();
+    }
+
+    function renderPagesList() {
+      const list = document.getElementById('pagesList');
+      list.innerHTML = '';
+      cfg.pages.forEach((p, i) => {
+        const row = document.createElement('div');
+        row.className = 'page-row' + (i === activePageIdx ? ' active' : '');
+        row.onclick = () => {
+          activePageIdx = i;
+          selectFirstItemOnPage();
+          renderDesigner();
+        };
+        const isFP = (p.type || 'grid') === 'floorplan';
+        const cnt = isFP ? (p.floorplan?.pins?.length || 0) + ' bodů' : (p.widgets?.length || 0);
+        row.innerHTML = `<span>${isFP ? '🗺 ' : ''}${escapeHtml(p.title)} (${cnt})</span>` +
+          (cfg.pages.length > 1 ? `<button class="danger sm" onclick="event.stopPropagation(); deletePage(${i})">✕</button>` : '');
+        list.appendChild(row);
+      });
+
+      const cur = cfg.pages[activePageIdx];
+      const isFP = (cur.type || 'grid') === 'floorplan';
+      document.getElementById('pageProps').innerHTML = `
+        <div class="form-grid">
+          <label class="field full">Název stránky
+            <input type="text" value="${escapeAttr(cur.title)}" oninput="cfg.pages[activePageIdx].title=this.value; markDirty(true); renderKindleTabs(); renderPagesListHeader();" />
+          </label>
+          <label class="field full">Typ stránky
+            <select onchange="setPageType(this.value)">
+              <option value="grid" ${!isFP?'selected':''}>Mřížka karet</option>
+              <option value="floorplan" ${isFP?'selected':''}>Půdorys budovy (mapa)</option>
+            </select>
+          </label>
+          ${!isFP ? `
+          <label class="field full">Počet sloupců
+            <select onchange="cfg.pages[activePageIdx].columns=parseInt(this.value,10); markDirty(true); renderKindleGrid();">
+              <option value="2" ${(cur.columns||2)===2?'selected':''}>2 sloupce (standard)</option>
+              <option value="3" ${cur.columns===3?'selected':''}>3 sloupce (vhodné na šířku)</option>
+              <option value="1" ${cur.columns===1?'selected':''}>1 sloupec (velké karty)</option>
+            </select>
+          </label>` : ''}
+        </div>
+      `;
+    }
+
+    function renderPagesListHeader() {
+      const rows = document.querySelectorAll('#pagesList .page-row span');
+      cfg.pages.forEach((p, i) => {
+        if (!rows[i]) return;
+        const isFP = (p.type || 'grid') === 'floorplan';
+        const cnt = isFP ? (p.floorplan?.pins?.length || 0) + ' bodů' : (p.widgets?.length || 0);
+        rows[i].textContent = `${isFP ? '🗺 ' : ''}${p.title} (${cnt})`;
+      });
+    }
+
+    function renderKindleTabs() {
+      const tabs = document.getElementById('kindleTabs');
+      tabs.innerHTML = '';
+      cfg.pages.forEach((p, i) => {
+        const b = document.createElement('div');
+        b.className = 'k-tab-btn' + (i === activePageIdx ? ' active' : '');
+        b.textContent = p.title;
+        b.onclick = () => {
+          activePageIdx = i;
+          selectFirstItemOnPage();
+          renderDesigner();
+        };
+        tabs.appendChild(b);
+      });
+    }
+
+    function renderKindleGrid() {
+      const page = cfg.pages[activePageIdx];
+      const grid = document.getElementById('kindleGrid');
+      const cols = page.columns || 2;
+      grid.className = 'k-grid cols-' + cols;
+      grid.innerHTML = '';
+
+      const typeNames = {
+        switch: 'Přepínač', button: 'Tlačítko / Scéna', stepper: 'Kroky',
+        sensor: 'Senzor', gauge: 'Budík', chart: 'Graf', select: 'Výběr',
+        weather: 'Počasí', timer: 'Časovač', calendar: 'Kalendář'
+      };
+
+      (page.widgets || []).forEach((w, idx) => {
+        const card = document.createElement('div');
+        const span = Math.min(w.span || 1, cols);
+        const spanCls = span === 3 ? ' span-3' : (span === 2 ? ' span-2' : '');
+        card.className = 'k-card' + spanCls + (idx === selectedWidgetIdx ? ' selected' : '');
+        card.draggable = true;
+        card.ondragstart = ev => onWidgetDragStart(ev, idx);
+        card.ondragover = ev => onCardDragOver(ev);
+        card.ondrop = ev => onCardDrop(ev, idx);
+        card.onclick = () => { selectedWidgetIdx = idx; renderKindleGrid(); renderInspector(); };
+
+        let mock = '';
+        if (w.type === 'switch') mock = 'ZAP / VYP';
+        if (w.type === 'button') mock = w.confirm ? 'SPUSTIT (potvrzení)' : 'SPUSTIT';
+        if (w.type === 'stepper') mock = `−   ${w.min ?? 0}..${w.max ?? 100} ${w.unit || ''}   +`;
+        if (w.type === 'sensor') mock = `22.5 ${w.unit || ''}`;
+        if (w.type === 'gauge') mock = `◔ ${w.min ?? 0}–${w.max ?? 100} ${w.unit || ''}`;
+        if (w.type === 'chart') mock = `📈 křivka (${w.unit || 'hodnota'})`;
+        if (w.type === 'weather') mock = `☀ Předpověď Open-Meteo + svátky`;
+        if (w.type === 'timer') mock = `⏱ ${(w.timer_presets && w.timer_presets.length ? w.timer_presets : [5,15,30]).join('m | ')}m`;
+        if (w.type === 'calendar') mock = `📅 Nadcházející události (.ics)`;
+        if (w.type === 'select') mock = (w.options || []).map(o => o.label).join(' | ');
+
+        let subTopic = w.state_topic || w.command_topic || 'bez topicu';
+        if (w.type === 'weather') subTopic = 'Open-Meteo + svátky';
+        if (w.type === 'calendar') subTopic = (cfg.calendar?.urls?.length ? cfg.calendar.urls.length + ' .ics kanál(y)' : 'nastav .ics v Nastavení');
+        if (w.type === 'timer' && w.target_widget_id) subTopic = 'cíl: ' + w.target_widget_id + ' (' + (w.target_state || 'OFF') + ')';
+
+        card.innerHTML = `
+          <div>
+            <div class="k-card-top">
+              <div class="k-card-title">${w.homekit ? '🏠 ' : ''}${escapeHtml(w.label || w.id)}</div>
+              <span class="k-card-type">${typeNames[w.type] || w.type}</span>
+            </div>
+            <div class="k-card-sub">${w.broker_id ? '[' + escapeHtml(w.broker_id) + '] ' : ''}${escapeHtml(subTopic)}</div>
+          </div>
+          <div class="k-card-mock">${escapeHtml(mock)}</div>
+          <div class="k-card-actions" onclick="event.stopPropagation()">
+            <button class="secondary sm" onclick="moveWidget(${idx}, -1)">◀</button>
+            <button class="secondary sm" onclick="moveWidget(${idx}, 1)">▶</button>
+            <button class="danger sm" onclick="deleteWidget(${idx})">✕</button>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+
+      if (!page.widgets || page.widgets.length === 0) {
+        grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:80px 20px; color:#777; font-size:13px;">Přetáhni sem prvek z palety vlevo</div>';
+      }
+    }
+
+    // ---------------- FLOORPLAN EDITOR ----------------
+    function ensureFloorplan() {
+      const p = cfg.pages[activePageIdx];
+      if (!p.floorplan) p.floorplan = { shapes: [], pins: [] };
+      p.floorplan.shapes = p.floorplan.shapes || [];
+      p.floorplan.pins = p.floorplan.pins || [];
+      return p.floorplan;
+    }
+
+    function setFloorTool(tool) {
+      fpTool = tool;
+      document.querySelectorAll('#floorplanToolsPanel .tool-btn').forEach(b => b.classList.remove('active'));
+      const btn = document.getElementById('tool-' + tool);
+      if (btn) btn.classList.add('active');
+      const hints = {
+        select: 'Klepni na místnost/senzor nebo přetáhni bod myší',
+        room: 'Táhni myší na plánku pro nakreslení obdélníku místnosti',
+        wall: 'Táhni myší od bodu k bodu pro nakreslení zdi',
+        door: 'Táhni myší pro vyznačení dveří / průchodu',
+        text: 'Klikni na místo v plánku, kam chceš vložit popisek'
+      };
+      document.getElementById('fpHint').textContent = hints[tool] || '';
+    }
+
+    function svgPoint(ev) {
+      const svg = document.getElementById('fpSvg');
+      const r = svg.getBoundingClientRect();
+      const x = Math.round(((ev.clientX - r.left) / r.width) * 1000 / 25) * 25;
+      const y = Math.round(((ev.clientY - r.top) / r.height) * 1000 / 25) * 25;
+      return {
+        x: Math.max(0, Math.min(1000, x)),
+        y: Math.max(0, Math.min(1000, y))
+      };
+    }
+
+    function addFloorPin(type, x, y, topicHint) {
+      const fp = ensureFloorplan();
+      const pin = {
+        id: 'pin_' + Math.random().toString(36).slice(2, 6),
+        x, y,
+        widget: createDefaultWidget(type, topicHint)
+      };
+      pin.widget.span = 1;
+      fp.pins.push(pin);
+      selectedPinIdx = fp.pins.length - 1;
+      selectedShapeIdx = -1;
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function onFloorDrop(ev) {
+      ev.preventDefault();
+      if (!dragSource || dragSource.kind !== 'palette') return;
+      const pt = svgPoint(ev);
+      addFloorPin(dragSource.type, pt.x, pt.y);
+      dragSource = null;
+    }
+
+    function loadSampleFloorplan() {
+      const fp = ensureFloorplan();
+      fp.shapes = [
+        { id: 'r1', kind: 'room', label: 'Obývák', x: 50, y: 50, w: 500, h: 475 },
+        { id: 'r2', kind: 'room', label: 'Kuchyně', x: 550, y: 50, w: 400, h: 475 },
+        { id: 'r3', kind: 'room', label: 'Ložnice', x: 50, y: 525, w: 450, h: 425 },
+        { id: 'r4', kind: 'room', label: 'Chodba & Koupelna', x: 500, y: 525, w: 450, h: 425 },
+        { id: 'd1', kind: 'door', x: 550, y: 225, x2: 550, y2: 325 },
+        { id: 'd2', kind: 'door', x: 225, y: 525, x2: 325, y2: 525 }
+      ];
+      if (!fp.pins.length) {
+        fp.pins = [
+          { id: 'p1', x: 250, y: 250, widget: createDefaultWidget('sensor', 'home/livingroom/temp') },
+          { id: 'p2', x: 750, y: 250, widget: createDefaultWidget('switch', 'home/kitchen/light') }
+        ];
+      }
+      selectedShapeIdx = 0;
+      selectedPinIdx = -1;
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function clearFloorplan() {
+      if (!confirm('Opravdu vymazat všechny tvary a body půdorysu?')) return;
+      const fp = ensureFloorplan();
+      fp.shapes = [];
+      fp.pins = [];
+      selectedShapeIdx = -1;
+      selectedPinIdx = -1;
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function renderFloorplanSVG() {
+      const svg = document.getElementById('fpSvg');
+      const fp = ensureFloorplan();
+      let html = '<defs><pattern id="grid25" width="25" height="25" patternUnits="userSpaceOnUse"><path d="M 25 0 L 0 0 0 25" fill="none" stroke="#eee" stroke-width="1"/></pattern></defs>';
+      html += '<rect width="1000" height="1000" fill="url(#grid25)"/>';
+
+      // Shapes
+      fp.shapes.forEach((s, si) => {
+        const sel = si === selectedShapeIdx ? 'stroke="#2563eb" stroke-width="6"' : '';
+        if (s.kind === 'room') {
+          const rx = s.w >= 0 ? s.x : s.x + s.w;
+          const ry = s.h >= 0 ? s.y : s.y + s.h;
+          const rw = Math.abs(s.w), rh = Math.abs(s.h);
+          html += `<g class="fp-shape" data-shape="${si}">
+            <rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" fill="#e8e8e8" stroke="${si===selectedShapeIdx?'#2563eb':'#111'}" stroke-width="5"/>
+            <text x="${rx+14}" y="${ry+32}" font-size="24" font-weight="700" fill="#333">${escapeHtml(s.label||'')}</text>
+          </g>`;
+        } else if (s.kind === 'wall') {
+          html += `<line class="fp-shape" data-shape="${si}" x1="${s.x}" y1="${s.y}" x2="${s.x2}" y2="${s.y2}" stroke="${si===selectedShapeIdx?'#2563eb':'#111'}" stroke-width="8" stroke-linecap="round"/>`;
+        } else if (s.kind === 'door') {
+          html += `<line class="fp-shape" data-shape="${si}" x1="${s.x}" y1="${s.y}" x2="${s.x2}" y2="${s.y2}" stroke="#fff" stroke-width="10"/>
+                   <line class="fp-shape" data-shape="${si}" x1="${s.x}" y1="${s.y}" x2="${s.x2}" y2="${s.y2}" stroke="${si===selectedShapeIdx?'#2563eb':'#777'}" stroke-width="4" stroke-dasharray="10 8"/>`;
+        } else if (s.kind === 'text') {
+          html += `<text class="fp-shape" data-shape="${si}" x="${s.x}" y="${s.y+24}" font-size="26" font-weight="700" fill="${si===selectedShapeIdx?'#2563eb':'#111'}">${escapeHtml(s.label||'Text')}</text>`;
+        }
+      });
+
+      // Live rubberband preview during drawing
+      if (fpDrag && fpDrag.kind === 'draw') {
+        const { x0, y0, x1, y1 } = fpDrag;
+        if (fpTool === 'room') {
+          const rx = Math.min(x0, x1), ry = Math.min(y0, y1), rw = Math.abs(x1 - x0), rh = Math.abs(y1 - y0);
+          html += `<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" fill="rgba(37,99,235,0.12)" stroke="#2563eb" stroke-width="4" stroke-dasharray="8 6"/>`;
+        } else {
+          html += `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="#2563eb" stroke-width="6" stroke-dasharray="8 6"/>`;
+        }
+      }
+
+      // Pins
+      fp.pins.forEach((pin, ki) => {
+        const w = pin.widget || {};
+        const sel = ki === selectedPinIdx;
+        const bx = Math.max(8, Math.min(820, pin.x - 90));
+        const by = Math.max(8, Math.min(915, pin.y - 38));
+        const isAction = w.type === 'switch' || w.type === 'button';
+        html += `<g class="fp-pin" data-pin="${ki}">
+          <rect x="${bx}" y="${by}" width="180" height="76" rx="4" fill="#fff" stroke="${sel ? '#2563eb' : '#111'}" stroke-width="${sel ? 6 : 4}"/>
+          <text x="${bx+12}" y="${by+28}" font-size="21" fill="#444">${escapeHtml(w.label || w.id)}</text>
+          <text x="${bx+12}" y="${by+60}" font-size="24" font-weight="700" fill="#111">${isAction ? (w.type==='switch'?'ZAP/VYP':'SPUSTIT') : ('22.5 ' + (w.unit||''))}</text>
+        </g>`;
+      });
+
+      svg.innerHTML = html;
+    }
+
+    (function bindFloorplanSVG() {
+      const svg = document.getElementById('fpSvg');
+      svg.addEventListener('pointerdown', (ev) => {
+        const pinEl = ev.target.closest('[data-pin]');
+        const shapeEl = ev.target.closest('[data-shape]');
+        const pt = svgPoint(ev);
+
+        if (fpTool === 'select') {
+          if (pinEl) {
+            const idx = parseInt(pinEl.getAttribute('data-pin'), 10);
+            selectedPinIdx = idx;
+            selectedShapeIdx = -1;
+            fpDrag = { kind: 'pin', idx };
+            svg.setPointerCapture(ev.pointerId);
+            renderFloorplanSVG();
+            renderInspector();
+            return;
+          }
+          if (shapeEl) {
+            selectedShapeIdx = parseInt(shapeEl.getAttribute('data-shape'), 10);
+            selectedPinIdx = -1;
+            renderFloorplanSVG();
+            renderInspector();
+            return;
+          }
+          selectedPinIdx = -1;
+          selectedShapeIdx = -1;
+          renderFloorplanSVG();
+          renderInspector();
+          return;
+        }
+
+        if (fpTool === 'text') {
+          const fp = ensureFloorplan();
+          fp.shapes.push({ id: 'txt_' + Date.now(), kind: 'text', label: 'Popisek', x: pt.x, y: pt.y });
+          selectedShapeIdx = fp.shapes.length - 1;
+          selectedPinIdx = -1;
+          setFloorTool('select');
+          markDirty(true);
+          renderDesigner();
+          return;
+        }
+
+        fpDrag = { kind: 'draw', x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
+        svg.setPointerCapture(ev.pointerId);
+        renderFloorplanSVG();
+      });
+
+      svg.addEventListener('pointermove', (ev) => {
+        if (!fpDrag) return;
+        const pt = svgPoint(ev);
+        if (fpDrag.kind === 'pin') {
+          const fp = ensureFloorplan();
+          const pin = fp.pins[fpDrag.idx];
+          if (pin) {
+            pin.x = pt.x;
+            pin.y = pt.y;
+            markDirty(true);
+            renderFloorplanSVG();
+          }
+        } else if (fpDrag.kind === 'draw') {
+          fpDrag.x1 = pt.x;
+          fpDrag.y1 = pt.y;
+          renderFloorplanSVG();
+        }
+      });
+
+      svg.addEventListener('pointerup', () => {
+        if (!fpDrag) return;
+        const fp = ensureFloorplan();
+        if (fpDrag.kind === 'draw') {
+          const { x0, y0, x1, y1 } = fpDrag;
+          if (Math.abs(x1 - x0) >= 25 || Math.abs(y1 - y0) >= 25) {
+            if (fpTool === 'room') {
+              fp.shapes.push({
+                id: 'room_' + Date.now(), kind: 'room', label: 'Místnost',
+                x: Math.min(x0, x1), y: Math.min(y0, y1),
+                w: Math.abs(x1 - x0), h: Math.abs(y1 - y0)
+              });
+            } else {
+              fp.shapes.push({
+                id: fpTool + '_' + Date.now(), kind: fpTool,
+                x: x0, y: y0, x2: x1, y2: y1
+              });
+            }
+            selectedShapeIdx = fp.shapes.length - 1;
+            selectedPinIdx = -1;
+            markDirty(true);
+          }
+        }
+        fpDrag = null;
+        renderDesigner();
+      });
+    })();
+
+    // ---------------- INSPECTOR ----------------
+    function getSelectedWidgetTarget() {
+      const p = cfg.pages[activePageIdx];
+      if ((p.type || 'grid') === 'floorplan') {
+        if (selectedPinIdx >= 0 && p.floorplan?.pins?.[selectedPinIdx]) {
+          return { w: p.floorplan.pins[selectedPinIdx].widget, isPin: true, pin: p.floorplan.pins[selectedPinIdx] };
+        }
+        return null;
+      }
+      if (selectedWidgetIdx >= 0 && p.widgets?.[selectedWidgetIdx]) {
+        return { w: p.widgets[selectedWidgetIdx], isPin: false };
+      }
+      return null;
+    }
+
+    function applyPreset(preset) {
+      const tgt = getSelectedWidgetTarget();
+      if (!tgt || !preset) return;
+      const w = tgt.w;
+      if (preset === 'z2m_switch') {
+        w.state_json_path = '$.state';
+        w.payload_on = '{"state":"ON"}';
+        w.payload_off = '{"state":"OFF"}';
+        w.value_on = 'ON';
+        w.value_off = 'OFF';
+      } else if (preset === 'tasmota_switch') {
+        w.state_json_path = '';
+        w.payload_on = 'ON';
+        w.payload_off = 'OFF';
+        w.value_on = 'ON';
+        w.value_off = 'OFF';
+      } else if (preset === 'apple_home_light') {
+        w.state_topic = 'local/switch/' + w.id;
+        w.command_topic = '';
+        w.state_json_path = '';
+        w.payload_on = 'ON';
+        w.payload_off = 'OFF';
+        w.value_on = 'ON';
+        w.value_off = 'OFF';
+        w.optimistic = true;
+        w.homekit = true;
+        w.homekit_type = 'lightbulb';
+      } else if (preset === 'json_temp_hum') {
+        w.state_json_path = '$.temperature';
+        w.unit = '°C';
+        w.secondary_topic = w.state_topic;
+        w.secondary_json_path = '$.humidity';
+        w.secondary_unit = '% RV';
+      }
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function renderInspector() {
+      const box = document.getElementById('inspectorBody');
+      const p = cfg.pages[activePageIdx];
+      const isFP = (p.type || 'grid') === 'floorplan';
+
+      // Shape inspector on floorplan
+      if (isFP && selectedShapeIdx >= 0 && p.floorplan?.shapes?.[selectedShapeIdx]) {
+        const s = p.floorplan.shapes[selectedShapeIdx];
+        box.innerHTML = `
+          <div class="form-grid">
+            <div class="full"><strong>Tvar půdorysu: ${escapeHtml(s.kind)}</strong></div>
+            ${(s.kind === 'room' || s.kind === 'text') ? `
+              <label class="field full">Popisek
+                <input type="text" value="${escapeAttr(s.label || '')}" oninput="cfg.pages[activePageIdx].floorplan.shapes[${selectedShapeIdx}].label=this.value; markDirty(true); renderFloorplanSVG();" />
+              </label>
+            ` : ''}
+            <label class="field">X (0–1000)
+              <input type="number" value="${s.x}" oninput="cfg.pages[activePageIdx].floorplan.shapes[${selectedShapeIdx}].x=parseInt(this.value,10)||0; markDirty(true); renderFloorplanSVG();" />
+            </label>
+            <label class="field">Y (0–1000)
+              <input type="number" value="${s.y}" oninput="cfg.pages[activePageIdx].floorplan.shapes[${selectedShapeIdx}].y=parseInt(this.value,10)||0; markDirty(true); renderFloorplanSVG();" />
+            </label>
+          </div>
+          <div class="divider" style="padding-top:10px;">
+            <button class="danger sm" onclick="cfg.pages[activePageIdx].floorplan.shapes.splice(${selectedShapeIdx},1); selectedShapeIdx=-1; markDirty(true); renderDesigner();">Smazat tvar</button>
+          </div>
+        `;
+        return;
+      }
+
+      const tgt = getSelectedWidgetTarget();
+      if (!tgt) {
+        box.innerHTML = '<p class="hint">Klikni na prvek na obrazovce Kindlu nebo přetáhni nový z palety.</p>';
+        return;
+      }
+      const w = tgt.w;
+      const redrawCanvas = () => { if (isFP) renderFloorplanSVG(); else renderKindleGrid(); };
+
+      window._setW = (key, val) => {
+        w[key] = val;
+        markDirty(true);
+        redrawCanvas();
+      };
+      window._changeVizType = (newType) => {
+        w.type = newType;
+        if (newType === 'gauge' && !w.max && !w.min) { w.min = 0; w.max = 100; }
+        markDirty(true);
+        renderDesigner();
+      };
+
+      let specific = '';
+      if (w.type === 'switch') {
+        specific = `
+          <div class="full">
+            <label class="field">Rychlá šablona
+              <select onchange="applyPreset(this.value); this.value='';">
+                <option value="">— Vybrat šablonu —</option>
+                <option value="apple_home_light">💡 Čistě Apple Home světlo (bez MQTT topicu)</option>
+                <option value="tasmota_switch">Tasmota / standard (ON / OFF)</option>
+                <option value="z2m_switch">Zigbee2MQTT (JSON {"state":"ON"})</option>
+              </select>
+            </label>
+          </div>
+          <label class="field full">State topic (čtení stavu)
+            <input type="text" list="knownTopics" value="${escapeAttr(w.state_topic || '')}" oninput="_setW('state_topic', this.value)" />
+          </label>
+          <label class="field full">JSONPath ze stavu (volitelné, např. $.state)
+            <input type="text" value="${escapeAttr(w.state_json_path || '')}" oninput="_setW('state_json_path', this.value)" />
+          </label>
+          <label class="field full">Command topic (odesílání příkazu)
+            <input type="text" list="knownTopics" value="${escapeAttr(w.command_topic || '')}" oninput="_setW('command_topic', this.value)" />
+          </label>
+          <label class="field">Payload ZAP
+            <input type="text" value="${escapeAttr(w.payload_on || 'ON')}" oninput="_setW('payload_on', this.value)" />
+          </label>
+          <label class="field">Payload VYP
+            <input type="text" value="${escapeAttr(w.payload_off || 'OFF')}" oninput="_setW('payload_off', this.value)" />
+          </label>
+          <label class="field">Hodnota stavu ZAP
+            <input type="text" value="${escapeAttr(w.value_on || 'ON')}" oninput="_setW('value_on', this.value)" />
+          </label>
+          <label class="field">Hodnota stavu VYP
+            <input type="text" value="${escapeAttr(w.value_off || 'OFF')}" oninput="_setW('value_off', this.value)" />
+          </label>
+        `;
+      } else if (w.type === 'button') {
+        w.macro_actions = w.macro_actions || [];
+        const allSwitches = collectAllSwitches();
+        window._addMacroStep = () => {
+          w.macro_actions = w.macro_actions || [];
+          const defId = allSwitches.length ? allSwitches[0].id : '';
+          w.macro_actions.push({ widget_id: defId, state: 'OFF' });
+          markDirty(true);
+          renderDesigner();
+        };
+        window._delMacroStep = (mi) => {
+          w.macro_actions.splice(mi, 1);
+          markDirty(true);
+          renderDesigner();
+        };
+        window._setMacroStep = (mi, key, val) => {
+          w.macro_actions[mi][key] = val;
+          markDirty(true);
+        };
+        const macroRows = (w.macro_actions || []).map((ma, mi) => {
+          const swOpts = allSwitches.map(sw => `<option value="${escapeAttr(sw.id)}" ${ma.widget_id===sw.id?'selected':''}>${escapeHtml(sw.name)}</option>`).join('');
+          return `
+            <div class="opt-row">
+              <select onchange="_setMacroStep(${mi}, 'widget_id', this.value)">${swOpts || '<option value="">(žádný přepínač)</option>'}</select>
+              <select onchange="_setMacroStep(${mi}, 'state', this.value)">
+                <option value="ON" ${ma.state==='ON'?'selected':''}>ZAPNOUT (ON)</option>
+                <option value="OFF" ${(!ma.state||ma.state==='OFF')?'selected':''}>VYPNOUT (OFF)</option>
+                <option value="TOGGLE" ${ma.state==='TOGGLE'?'selected':''}>PŘEPNOUT</option>
+              </select>
+              <button class="danger sm" onclick="_delMacroStep(${mi})">✕</button>
+            </div>
+          `;
+        }).join('');
+        specific = `
+          <div class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:6px; padding:8px;">
+            <div style="font-size:12px; font-weight:700; margin-bottom:6px;">🎬 Makro scéna (ovládání více světel / přepínačů najednou):</div>
+            ${macroRows || '<div class="hint" style="margin-bottom:6px;">Zatím žádné kroky scény.</div>'}
+            <button class="secondary sm" onclick="_addMacroStep()">+ Přidat světlo / přepínač do scény</button>
+          </div>
+          <label class="field full">Volitelný přímý MQTT Command topic
+            <input type="text" list="knownTopics" value="${escapeAttr(w.command_topic || '')}" oninput="_setW('command_topic', this.value)" />
+          </label>
+          <label class="field full">Payload při stisku
+            <input type="text" value="${escapeAttr(w.payload || 'PRESS')}" oninput="_setW('payload', this.value)" />
+          </label>
+          <label class="field full">Volitelný State topic
+            <input type="text" list="knownTopics" value="${escapeAttr(w.state_topic || '')}" oninput="_setW('state_topic', this.value)" />
+          </label>
+          <div class="full">
+            <label class="check-row"><input type="checkbox" ${w.confirm ? 'checked' : ''} onchange="_setW('confirm', this.checked)" /> Vyžadovat potvrzení 2× klepnutím</label>
+          </div>
+        `;
+      } else if (w.type === 'stepper') {
+        specific = `
+          <label class="field full">State topic
+            <input type="text" list="knownTopics" value="${escapeAttr(w.state_topic || '')}" oninput="_setW('state_topic', this.value)" />
+          </label>
+          <label class="field full">JSONPath (volitelné)
+            <input type="text" value="${escapeAttr(w.state_json_path || '')}" oninput="_setW('state_json_path', this.value)" />
+          </label>
+          <label class="field full">Command topic
+            <input type="text" list="knownTopics" value="${escapeAttr(w.command_topic || '')}" oninput="_setW('command_topic', this.value)" />
+          </label>
+          <label class="field full">Šablona příkazu
+            <input type="text" value="${escapeAttr(w.command_template || '{{value}}')}" oninput="_setW('command_template', this.value)" />
+          </label>
+          <label class="field">Min <input type="number" step="any" value="${w.min ?? 0}" oninput="_setW('min', parseFloat(this.value)||0)" /></label>
+          <label class="field">Max <input type="number" step="any" value="${w.max ?? 100}" oninput="_setW('max', parseFloat(this.value)||0)" /></label>
+          <label class="field">Krok <input type="number" step="any" value="${w.step ?? 1}" oninput="_setW('step', parseFloat(this.value)||1)" /></label>
+          <label class="field">Desetinná místa <input type="number" min="0" max="4" value="${w.precision ?? 0}" oninput="_setW('precision', parseInt(this.value,10)||0)" /></label>
+          <label class="field full">Jednotka <input type="text" value="${escapeAttr(w.unit || '')}" oninput="_setW('unit', this.value)" /></label>
+        `;
+      } else if (w.type === 'sensor' || w.type === 'gauge' || w.type === 'chart') {
+        specific = `
+          ${!isFP ? `
+          <label class="field full">Styl vizualizace dat
+            <select onchange="_changeVizType(this.value)">
+              <option value="sensor" ${w.type==='sensor'?'selected':''}>Číselný senzor</option>
+              <option value="gauge" ${w.type==='gauge'?'selected':''}>Budík (Gauge oblouk)</option>
+              <option value="chart" ${w.type==='chart'?'selected':''}>Graf (historie vývoje)</option>
+            </select>
+          </label>` : ''}
+          <label class="field full">State topic
+            <input type="text" list="knownTopics" value="${escapeAttr(w.state_topic || '')}" oninput="_setW('state_topic', this.value)" />
+          </label>
+          <label class="field">JSONPath (např. $.temperature)
+            <input type="text" value="${escapeAttr(w.state_json_path || '')}" oninput="_setW('state_json_path', this.value)" />
+          </label>
+          <label class="field">Jednotka
+            <input type="text" value="${escapeAttr(w.unit || '')}" placeholder="°C, W, %" oninput="_setW('unit', this.value)" />
+          </label>
+          ${(w.type === 'gauge' || w.type === 'chart') ? `
+            <label class="field">Rozsah Min ${w.type==='chart'?'(0=auto)':''}
+              <input type="number" step="any" value="${w.min ?? 0}" oninput="_setW('min', parseFloat(this.value)||0)" />
+            </label>
+            <label class="field">Rozsah Max ${w.type==='chart'?'(0=auto)':''}
+              <input type="number" step="any" value="${w.max ?? (w.type==='gauge'?100:0)}" oninput="_setW('max', parseFloat(this.value)||0)" />
+            </label>
+            <label class="field full">Desetinná místa
+              <input type="number" min="0" max="4" value="${w.precision ?? 1}" oninput="_setW('precision', parseInt(this.value,10)||0)" />
+            </label>
+          ` : `
+            <div class="full">
+              <label class="field">Rychlá šablona
+                <select onchange="applyPreset(this.value); this.value='';">
+                  <option value="">— Vybrat šablonu —</option>
+                  <option value="json_temp_hum">JSON Teplota + Vlhkost</option>
+                </select>
+              </label>
+            </div>
+            <label class="field full">Sekundární topic (volitelné)
+              <input type="text" list="knownTopics" value="${escapeAttr(w.secondary_topic || '')}" oninput="_setW('secondary_topic', this.value)" />
+            </label>
+            <label class="field">Sekundární JSONPath
+              <input type="text" value="${escapeAttr(w.secondary_json_path || '')}" oninput="_setW('secondary_json_path', this.value)" />
+            </label>
+            <label class="field">Sekundární jednotka
+              <input type="text" value="${escapeAttr(w.secondary_unit || '')}" oninput="_setW('secondary_unit', this.value)" />
+            </label>
+          `}
+        `;
+      } else if (w.type === 'select') {
+        const opts = w.options || [];
+        const optRows = opts.map((o, oi) => `
+          <div class="opt-row">
+            <input type="text" placeholder="Popisek" value="${escapeAttr(o.label)}" oninput="cfg.pages[activePageIdx].widgets[selectedWidgetIdx].options[${oi}].label=this.value; markDirty(true); renderKindleGrid();" />
+            <input type="text" placeholder="Payload" value="${escapeAttr(o.payload)}" oninput="cfg.pages[activePageIdx].widgets[selectedWidgetIdx].options[${oi}].payload=this.value; markDirty(true);" />
+            <button class="danger sm" onclick="cfg.pages[activePageIdx].widgets[selectedWidgetIdx].options.splice(${oi},1); markDirty(true); renderDesigner();">✕</button>
+          </div>
+        `).join('');
+        specific = `
+          <label class="field full">State topic <input type="text" list="knownTopics" value="${escapeAttr(w.state_topic || '')}" oninput="_setW('state_topic', this.value)" /></label>
+          <label class="field full">JSONPath <input type="text" value="${escapeAttr(w.state_json_path || '')}" oninput="_setW('state_json_path', this.value)" /></label>
+          <label class="field full">Command topic <input type="text" list="knownTopics" value="${escapeAttr(w.command_topic || '')}" oninput="_setW('command_topic', this.value)" /></label>
+          <div class="full">
+            <div style="font-size:12px; font-weight:600; margin-bottom:6px;">Volby tlačítek:</div>
+            ${optRows}
+            <button class="secondary sm" onclick="cfg.pages[activePageIdx].widgets[selectedWidgetIdx].options.push({label:'Volba',payload:'val'}); markDirty(true); renderDesigner();">+ Přidat volbu</button>
+          </div>
+        `;
+      } else if (w.type === 'timer') {
+        const switches = collectAllSwitches();
+        const swOpts = ['<option value="">(vlastní MQTT topic níže)</option>']
+          .concat(switches.map(sw => `<option value="${escapeAttr(sw.id)}" ${w.target_widget_id===sw.id?'selected':''}>${escapeHtml(sw.name)}</option>`))
+          .join('');
+        window._setTimerPresets = (raw) => {
+          const parsed = String(raw || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => Number.isFinite(n) && n > 0);
+          w.timer_presets = parsed.length ? parsed : [5, 15, 30];
+          markDirty(true);
+          redrawCanvas();
+        };
+        specific = `
+          <label class="field full">Cílový přepínač / světlo po vypršení
+            <select onchange="_setW('target_widget_id', this.value); renderInspector();">
+              ${swOpts}
+            </select>
+          </label>
+          <label class="field">Akce po uplynutí času
+            <select onchange="_setW('target_state', this.value)">
+              <option value="OFF" ${(!w.target_state||w.target_state==='OFF')?'selected':''}>VYPNOUT (OFF)</option>
+              <option value="ON" ${w.target_state==='ON'?'selected':''}>ZAPNOUT (ON)</option>
+              <option value="TOGGLE" ${w.target_state==='TOGGLE'?'selected':''}>PŘEPNOUT</option>
+            </select>
+          </label>
+          <label class="field">Předvolby v minutách (oddělené čárkou)
+            <input type="text" value="${escapeAttr((w.timer_presets && w.timer_presets.length ? w.timer_presets : [5,15,30]).join(', '))}" placeholder="5, 15, 30" oninput="_setTimerPresets(this.value)" />
+          </label>
+          ${!w.target_widget_id ? `
+          <label class="field full">Volitelný přímý MQTT Command topic
+            <input type="text" list="knownTopics" value="${escapeAttr(w.command_topic || '')}" oninput="_setW('command_topic', this.value)" />
+          </label>
+          <label class="field full">MQTT Payload po uplynutí
+            <input type="text" value="${escapeAttr(w.payload || 'OFF')}" oninput="_setW('payload', this.value)" />
+          </label>` : ''}
+        `;
+      } else if (w.type === 'calendar') {
+        specific = `
+          <div class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:6px; padding:8px; font-size:12px;">
+            Odkazy na <code>.ics</code> / <code>webcal://</code> kalendáře nastav v záložce <strong>Nastavení → Kalendář</strong>. Klepnutím na kartu na Kindlu se otevře detailní 14denní přehled událostí.
+          </div>
+        `;
+      }
+
+      const brokers = getAllBrokers();
+      const brokerOptions = brokers.map(b => {
+        const isPrimary = b.id === (cfg.mqtt.id || 'default');
+        const val = isPrimary ? '' : b.id;
+        const selected = (w.broker_id || '') === val || (w.broker_id && w.broker_id === b.id);
+        return `<option value="${escapeAttr(val)}" ${selected ? 'selected' : ''}>${escapeHtml(b.name || b.id)} (${escapeHtml(b.id)})</option>`;
+      }).join('');
+
+      box.innerHTML = `
+        <div class="form-grid">
+          <label class="field full">Název prvku
+            <input type="text" value="${escapeAttr(w.label || '')}" oninput="_setW('label', this.value)" />
+          </label>
+          <label class="field full">Ikona prvku na displeji
+            <select onchange="_setW('icon', this.value)">
+              <option value="" ${!w.icon?'selected':''}>✨ Automatická (podle názvu a typu)</option>
+              <option value="light" ${w.icon==='light'?'selected':''}>💡 Světlo / Žárovka</option>
+              <option value="thermometer" ${w.icon==='thermometer'?'selected':''}>🌡 Teploměr / Teplota</option>
+              <option value="drop" ${w.icon==='drop'?'selected':''}>💧 Kapka / Vlhkost</option>
+              <option value="bolt" ${w.icon==='bolt'?'selected':''}>⚡ Blesk / Výkon / Energie</option>
+              <option value="plug" ${w.icon==='plug'?'selected':''}>🔌 Zásuvka / Spotřebič</option>
+              <option value="door" ${w.icon==='door'?'selected':''}>🚪 Dveře / Brána / Vrata</option>
+              <option value="home" ${w.icon==='home'?'selected':''}>🏠 Dům / Režim</option>
+              <option value="fan" ${w.icon==='fan'?'selected':''}>🌀 Ventilátor / Větrání</option>
+              <option value="sun" ${w.icon==='sun'?'selected':''}>☀ Slunce / Jas / Žaluzie</option>
+              <option value="clock" ${w.icon==='clock'?'selected':''}>⏱ Hodiny / Časovač</option>
+              <option value="calendar" ${w.icon==='calendar'?'selected':''}>📅 Kalendář / Plán</option>
+              <option value="power" ${w.icon==='power'?'selected':''}>⏻ Napájení / Vypínač</option>
+            </select>
+          </label>
+          <label class="field full">MQTT Broker (instance)
+            <select onchange="_setW('broker_id', this.value)">
+              ${brokerOptions}
+            </select>
+          </label>
+          ${!isFP ? `
+            <label class="field">Podtitulek
+              <input type="text" value="${escapeAttr(w.subtitle || '')}" oninput="_setW('subtitle', this.value)" />
+            </label>
+            <label class="field">Šířka karty
+              <select onchange="_setW('span', parseInt(this.value,10))">
+                <option value="1" ${(w.span||1)===1?'selected':''}>1 sloupec</option>
+                <option value="2" ${w.span===2?'selected':''}>2 sloupce</option>
+                <option value="3" ${w.span===3?'selected':''}>3 sloupce (celý řádek na šířku)</option>
+              </select>
+            </label>
+          ` : `
+            <label class="field">Pozice X (0–1000)
+              <input type="number" min="0" max="1000" value="${tgt.pin.x}" oninput="cfg.pages[activePageIdx].floorplan.pins[${selectedPinIdx}].x=parseInt(this.value,10)||0; markDirty(true); renderFloorplanSVG();" />
+            </label>
+            <label class="field">Pozice Y (0–1000)
+              <input type="number" min="0" max="1000" value="${tgt.pin.y}" oninput="cfg.pages[activePageIdx].floorplan.pins[${selectedPinIdx}].y=parseInt(this.value,10)||0; markDirty(true); renderFloorplanSVG();" />
+            </label>
+          `}
+          ${specific}
+          ${(w.type === 'switch' || w.type === 'sensor' || w.type === 'gauge' || w.type === 'chart' || w.type === 'stepper') ? `
+          <div class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:6px; padding:8px;">
+            <label class="check-row"><input type="checkbox" ${w.show_in_standby ? 'checked' : ''} onchange="_setW('show_in_standby', this.checked)" /> 🌙 Zobrazit na pohotovostním spořiči (Standby s hodinami)</label>
+          </div>` : ''}
+          ${(w.type === 'sensor' || w.type === 'gauge' || w.type === 'chart' || w.type === 'stepper') ? `
+          <div class="full" style="background:#fff8f6; border:1px solid #e2b4ad; border-radius:6px; padding:8px;">
+            <label class="check-row"><input type="checkbox" ${w.alert_enabled ? 'checked' : ''} onchange="_setW('alert_enabled', this.checked); renderInspector();" /> ⚠ Hlídat limity (alarm rozsvítí displej a zobrazí varování)</label>
+            ${w.alert_enabled ? `
+              <div class="form-grid" style="margin-top:6px;">
+                <label class="field">Min limit (prázdné = nehlídat)
+                  <input type="number" step="any" value="${w.alert_min ?? ''}" placeholder="např. 16" oninput="_setW('alert_min', this.value==='' ? null : parseFloat(this.value))" />
+                </label>
+                <label class="field">Max limit (prázdné = nehlídat)
+                  <input type="number" step="any" value="${w.alert_max ?? ''}" placeholder="např. 28" oninput="_setW('alert_max', this.value==='' ? null : parseFloat(this.value))" />
+                </label>
+              </div>
+            ` : ''}
+          </div>` : ''}
+          ${(w.type === 'switch' || w.type === 'sensor' || w.type === 'gauge' || w.type === 'chart') ? `
+          <div class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:6px; padding:8px;">
+            <label class="check-row"><input type="checkbox" ${w.homekit ? 'checked' : ''} onchange="_setW('homekit', this.checked); renderInspector(); renderHomeKitChecklist();" /> 🏠 Sdílet tento prvek do Apple Home</label>
+            ${(w.homekit && w.type === 'switch') ? `
+              <label class="field" style="margin-top:6px;">Typ v Apple Home
+                <select onchange="_setW('homekit_type', this.value); renderHomeKitChecklist();">
+                  <option value="lightbulb" ${(!w.homekit_type || w.homekit_type==='lightbulb')?'selected':''}>💡 Světlo (Lightbulb)</option>
+                  <option value="switch" ${w.homekit_type==='switch'?'selected':''}>🔘 Vypínač (Switch)</option>
+                  <option value="outlet" ${w.homekit_type==='outlet'?'selected':''}>🔌 Zásuvka (Outlet)</option>
+                </select>
+              </label>
+            ` : ''}
+          </div>` : ''}
+          ${(w.type === 'switch' || w.type === 'button' || w.type === 'stepper' || w.type === 'select' || w.type === 'timer') ? `
+          <div class="full">
+            <label class="check-row"><input type="checkbox" ${w.pin_protected ? 'checked' : ''} onchange="_setW('pin_protected', this.checked); renderDesigner();" /> 🔒 Chránit tento prvek PIN kódem (dětská pojistka)</label>
+            ${w.type !== 'timer' ? `
+            <label class="check-row"><input type="checkbox" ${w.optimistic ? 'checked' : ''} onchange="_setW('optimistic', this.checked)" /> Optimistický stav (změnit hned po klepnutí)</label>
+            <label class="check-row"><input type="checkbox" ${w.retain ? 'checked' : ''} onchange="_setW('retain', this.checked)" /> Retain příkazu</label>
+            ` : ''}
+          </div>` : ''}
+        </div>
+        <div class="divider" style="display:flex; gap:8px; padding-top:10px;">
+          ${!isFP ? `<button class="secondary sm" onclick="duplicateWidget(${selectedWidgetIdx})">Duplikovat</button>
+                     <button class="danger sm" onclick="deleteWidget(${selectedWidgetIdx})">Smazat prvek</button>`
+                  : `<button class="danger sm" onclick="cfg.pages[activePageIdx].floorplan.pins.splice(${selectedPinIdx},1); selectedPinIdx=-1; markDirty(true); renderDesigner();">Smazat bod z mapy</button>`}
+        </div>
+      `;
+    }
+
+    // Live screen mirror
+    const screenImg = document.getElementById('screenImg');
+    function refreshScreen() {
+      screenImg.src = '/api/screen.png?t=' + Date.now();
+    }
+    screenImg.addEventListener('click', async (ev) => {
+      const rect = screenImg.getBoundingClientRect();
+      const natW = screenImg.naturalWidth || 600;
+      const natH = screenImg.naturalHeight || 800;
+      const x = Math.round((ev.clientX - rect.left) * natW / rect.width);
+      const y = Math.round((ev.clientY - rect.top) * natH / rect.height);
+      await fetch('/api/tap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ x, y })
+      });
+      setTimeout(refreshScreen, 150);
+    });
+
+    async function loadYAML() {
+      const res = await fetch('/api/config');
+      document.getElementById('yamlEditor').value = await res.text();
+    }
+
+    async function saveYAML() {
+      const msg = document.getElementById('yamlMsg');
+      msg.textContent = 'Ukládám…';
+      const yaml = document.getElementById('yamlEditor').value;
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ yaml })
+      });
+      if (res.ok) {
+        msg.textContent = 'Uloženo!';
+        await loadConfigJSON();
+        setTimeout(refreshScreen, 200);
+      } else {
+        msg.textContent = await res.text();
+      }
+    }
+
+    function quickAddFromTopic(topic, type, brokerID) {
+      const page = cfg.pages[activePageIdx];
+      const w = createDefaultWidget(type, topic);
+      const primaryID = cfg?.mqtt?.id || 'default';
+      if (brokerID && brokerID !== primaryID) {
+        w.broker_id = brokerID;
+      }
+      if ((page.type || 'grid') === 'floorplan') {
+        const fp = ensureFloorplan();
+        w.span = 1;
+        fp.pins.push({ id: 'pin_' + Math.random().toString(36).slice(2, 6), x: 500, y: 500, widget: w });
+        selectedPinIdx = fp.pins.length - 1;
+        selectedShapeIdx = -1;
+      } else {
+        page.widgets = page.widgets || [];
+        page.widgets.push(w);
+        selectedWidgetIdx = page.widgets.length - 1;
+      }
+      markDirty(true);
+      renderDesigner();
+      switchTab('designer', document.querySelector('.nav-tab'));
+    }
+
+    async function resetHomeKitPairing() {
+      if (!confirm('Opravdu resetovat spárování s Apple Home? Poté bude možné most znovu spárovat v aplikaci Domácnost.')) return;
+      const res = await fetch('/api/homekit/reset', { method: 'POST' });
+      if (res.ok) {
+        alert('Spárování bylo resetováno. Nyní můžeš KindleIOT znovu přidat v aplikaci Domácnost.');
+        pollStatus();
+      } else {
+        alert('Chyba: ' + await res.text());
+      }
+    }
+
+    async function pollStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        const hk = data.homekit || {};
+        const hkPill = document.getElementById('hkStatusPill');
+        if (hkPill) {
+          if (!hk.enabled) {
+            hkPill.textContent = 'Vypnuto';
+            hkPill.className = 'pill';
+          } else if (hk.paired) {
+            hkPill.textContent = `Spárováno (${hk.accessories || 0} prvků)`;
+            hkPill.className = 'pill ok';
+          } else {
+            hkPill.textContent = `Čeká na spárování (PIN: ${hk.pin || '00102003'})`;
+            hkPill.className = 'pill dirty';
+          }
+        }
+        const pill = document.getElementById('mqttStatus');
+        const totalN = data.mqtt_total_n || 1;
+        const connN = data.mqtt_connected_n ?? (data.mqtt_connected ? 1 : 0);
+        if (data.mqtt_connected) {
+          pill.textContent = totalN > 1 ? `MQTT: ${connN}/${totalN} připojeno` : 'MQTT: Připojeno';
+          pill.className = 'pill ok';
+        } else {
+          const prefix = totalN > 1 ? `MQTT: ${connN}/${totalN}` : 'MQTT: Odpojeno';
+          pill.textContent = prefix + (data.mqtt_error ? ' (' + data.mqtt_error + ')' : '');
+          pill.className = 'pill err';
+        }
+        const hw = data.device || {};
+        document.getElementById('hwInfo').textContent =
+          `Baterie: ${hw.Battery ?? '?'}% | Podsvícení: ${hw.Brightness ?? '?'}/24 | IP: ${hw.IP || '-'}`;
+
+        const brokersMap = data.brokers || {};
+        const brokerPills = document.getElementById('brokerPills');
+        brokerPills.innerHTML = Object.keys(brokersMap).sort().map(bid => {
+          const b = brokersMap[bid];
+          return `<span class="pill ${b.connected ? 'ok' : 'err'}">${escapeHtml(b.name || bid)} (${escapeHtml(bid)}): ${b.connected ? 'OK' : (b.last_error || 'Odpojeno')}</span>`;
+        }).join('');
+
+        const rows = [];
+        const allTopicNames = new Set();
+        Object.keys(brokersMap).sort().forEach(bid => {
+          const tmap = brokersMap[bid].topics || {};
+          Object.keys(tmap).sort().forEach(k => {
+            allTopicNames.add(k);
+            rows.push({ brokerID: bid, topic: k, item: tmap[k] });
+          });
+        });
+        if (rows.length === 0 && data.topics) {
+          Object.keys(data.topics).sort().forEach(k => {
+            allTopicNames.add(k);
+            rows.push({ brokerID: 'default', topic: k, item: data.topics[k] });
+          });
+        }
+
+        document.getElementById('knownTopics').innerHTML =
+          Array.from(allTopicNames).sort().map(k => `<option value="${escapeAttr(k)}"></option>`).join('');
+
+        const tbody = document.getElementById('topicsBody');
+        tbody.innerHTML = '';
+        for (const r of rows) {
+          const tr = document.createElement('tr');
+          const t = r.item.updated_at ? new Date(r.item.updated_at).toLocaleTimeString() : '';
+          tr.innerHTML = `
+            <td><span class="pill">${escapeHtml(r.brokerID)}</span></td>
+            <td><code>${escapeHtml(r.topic)}</code></td>
+            <td><code>${escapeHtml(r.item.payload)}</code></td>
+            <td>${escapeHtml(t)}</td>
+            <td style="white-space:nowrap;">
+              <button class="secondary sm" onclick="quickAddFromTopic('${escapeAttr(r.topic)}','sensor','${escapeAttr(r.brokerID)}')">+ Senzor</button>
+              <button class="secondary sm" onclick="quickAddFromTopic('${escapeAttr(r.topic)}','gauge','${escapeAttr(r.brokerID)}')">+ Budík</button>
+              <button class="secondary sm" onclick="quickAddFromTopic('${escapeAttr(r.topic)}','chart','${escapeAttr(r.brokerID)}')">+ Graf</button>
+              <button class="secondary sm" onclick="quickAddFromTopic('${escapeAttr(r.topic)}','switch','${escapeAttr(r.brokerID)}')">+ Přepínač</button>
+            </td>`;
+          tbody.appendChild(tr);
+        }
+      } catch (_) {}
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function escapeAttr(s) {
+      return escapeHtml(s);
+    }
+
+    loadConfigJSON();
+    pollStatus();
+    setInterval(pollStatus, 2500);
+    setInterval(() => {
+      if (document.getElementById('tab-preview').classList.contains('active')) {
+        refreshScreen();
+      }
+    }, 3000);
+  </script>
+</body>
+</html>

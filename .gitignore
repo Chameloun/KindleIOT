@@ -1,0 +1,23 @@
+# Compiled binaries
+/kindleiot
+dist/kindle/kindleiot/kindleiot-arm
+/release/
+
+# Local runtime state & secrets (never commit live credentials or pairings)
+config.yaml
+config.local.yaml
+homekit-db/
+*.log
+*.pid
+
+# Testing / coverage artifacts
+coverage.out
+*.test
+
+# OS & editor clutter
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
