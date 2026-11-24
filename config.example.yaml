@@ -38,6 +38,23 @@ homekit:
   port: 51827
   store_dir: homekit-db
 
+# Optional passive BLE proximity wake-up (Apple Watch / iPhone via IRK or static MAC)
+# Note: keep system Bluetooth OFF in Kindle Settings so KindleIOT owns the UART safely.
+bluetooth:
+  enabled: false
+  rssi_threshold: -65
+  away_timeout_sec: 30
+  wake_standby: true
+  wake_backlight: true
+  keep_awake: true
+  publish_mqtt: true
+  homekit_occupancy: false
+  # devices:
+  #   - id: watch
+  #     name: Apple Watch
+  #     irk: "base64-or-32-hex-chars"
+  #     enabled: true
+
 weather:
   enabled: true
   # Built-in Open-Meteo integration (no API key required)
@@ -62,6 +79,32 @@ schedules:
     days: [1, 2, 3, 4, 5, 6, 7]
     widget_id: living_lamp
     state: OFF
+
+# Optional wall-mount battery guard (turns smart charger plug ON <= min_percent, OFF >= max_percent)
+battery_guard:
+  enabled: false
+  min_percent: 30
+  max_percent: 80
+  # widget_id: charger_plug
+  # topic: zigbee2mqtt/charger/set
+  payload_on: "ON"
+  payload_off: "OFF"
+
+# Optional Czech OTE electricity spot prices (no API key needed)
+spot_price:
+  enabled: false
+  currency: CZK
+  vat_percent: 21
+  distribution_fee: 0
+
+# Optional local When -> Then automation rules
+# rules:
+#   - id: arrive_home
+#     name: Welcome Notice
+#     enabled: true
+#     trigger: ble_near
+#     action_type: notify
+#     notify_text: "Welcome home!"
 
 device:
   title: KindleIOT

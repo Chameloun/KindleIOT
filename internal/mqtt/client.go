@@ -25,9 +25,10 @@ type TopicValue struct {
 
 // CommandHandler handles device-level MQTT commands directed at the Kindle itself.
 type CommandHandler struct {
-	OnBrightness func(level int)
-	OnRefresh    func()
-	OnNotify     func(text string)
+	OnBrightness   func(level int)
+	OnRefresh      func()
+	OnNotify       func(text string)
+	OnTopicMessage func(brokerID, topic, payload string)
 }
 
 // Client manages the universal MQTT connection, subscriptions, and topic state store.
@@ -303,6 +304,7 @@ func (c *Client) subscribeAll(cl paho.Client, topics []string) {
 
 func (c *Client) handleMessage(topic, payload string) {
 	c.mu.RLock()
+	brokerID := c.cfg.ID
 	base := c.cfg.BaseTopic
 	cmd := c.cmdHandler
 	c.mu.RUnlock()
@@ -324,6 +326,9 @@ func (c *Client) handleMessage(topic, payload string) {
 
 	c.recordValue(topic, payload)
 
+	if cmd.OnTopicMessage != nil {
+		go cmd.OnTopicMessage(brokerID, topic, payload)
+	}
 	if c.onUpdate != nil {
 		c.onUpdate()
 	}
@@ -370,6 +375,13 @@ func (c *Client) SetLocalValue(topic, payload string) {
 		return
 	}
 	c.recordValue(topic, payload)
+	c.mu.RLock()
+	brokerID := c.cfg.ID
+	cb := c.cmdHandler.OnTopicMessage
+	c.mu.RUnlock()
+	if cb != nil {
+		go cb(brokerID, topic, payload)
+	}
 	if c.onUpdate != nil {
 		c.onUpdate()
 	}
@@ -444,6 +456,35 @@ func (c *Client) PublishTelemetry(battery int, charging bool, ip string, brightn
 	}
 }
 
+// PublishPresence publishes retained BLE proximity presence state and JSON details to base_topic.
+func (c *Client) PublishPresence(present bool, device string, rssi int) {
+	c.mu.RLock()
+	cl := c.client
+	base := c.cfg.BaseTopic
+	c.mu.RUnlock()
+	if cl == nil || !cl.IsConnected() {
+		return
+	}
+	state := "OFF"
+	if present {
+		state = "ON"
+	}
+	cl.Publish(base+"/presence", 0, true, state)
+
+	payload, err := json.Marshal(struct {
+		Present bool   `json:"present"`
+		Device  string `json:"device,omitempty"`
+		RSSI    int    `json:"rssi,omitempty"`
+	}{
+		Present: present,
+		Device:  device,
+		RSSI:    rssi,
+	})
+	if err == nil {
+		cl.Publish(base+"/presence/json", 0, true, payload)
+	}
+}
+
 func (c *Client) publishDiscovery(cl paho.Client) {
 	c.mu.RLock()
 	cfg := c.cfg
@@ -500,6 +541,19 @@ func (c *Client) publishDiscovery(cl paho.Client) {
 				"min":                0,
 				"max":                24,
 				"step":               1,
+				"device":             device,
+			},
+		},
+		{
+			topic: fmt.Sprintf("%s/binary_sensor/%s_presence/config", cfg.DiscoveryPrefix, nodeID),
+			body: map[string]any{
+				"name":               "Proximity Presence",
+				"unique_id":          nodeID + "_presence",
+				"state_topic":        cfg.BaseTopic + "/presence",
+				"availability_topic": cfg.BaseTopic + "/status",
+				"device_class":       "occupancy",
+				"payload_on":         "ON",
+				"payload_off":        "OFF",
 				"device":             device,
 			},
 		},

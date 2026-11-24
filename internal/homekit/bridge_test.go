@@ -87,3 +87,50 @@ func TestHomeKitBridgeExposesOnlySelectedWidgetsAndPersistsState(t *testing.T) {
 		t.Fatalf("expected restarted bridge to restore local topic state to ON, got %+v", tv)
 	}
 }
+
+func TestHomeKitBridgeOccupancySensorAndReconfigure(t *testing.T) {
+	storeDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.HomeKit.Enabled = true
+	cfg.HomeKit.StoreDir = storeDir
+	cfg.HomeKit.Port = 0
+	cfg.Bluetooth.Enabled = true
+	cfg.Bluetooth.HomeKitOccupancy = true
+
+	if err := cfg.NormalizeAndValidate(); err != nil {
+		t.Fatalf("NormalizeAndValidate: %v", err)
+	}
+
+	mq := mqtt.NewManager(cfg, nil, mqtt.CommandHandler{})
+	br := NewBridge(cfg, mq, nil)
+	if err := br.Start(); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer br.Stop()
+
+	st := br.Status()
+	if st.Accessories != 1 || br.occupancy == nil {
+		t.Fatalf("expected occupancy sensor accessory registered, got st=%+v occ=%v", st, br.occupancy)
+	}
+	if br.occupancy.OccupancyDetected.Value() != 0 {
+		t.Fatalf("expected initial OccupancyDetected=0, got %d", br.occupancy.OccupancyDetected.Value())
+	}
+
+	br.SetOccupancy(true)
+	if br.occupancy.OccupancyDetected.Value() != 1 {
+		t.Fatalf("expected OccupancyDetected=1 after SetOccupancy(true), got %d", br.occupancy.OccupancyDetected.Value())
+	}
+	br.SetOccupancy(false)
+	if br.occupancy.OccupancyDetected.Value() != 0 {
+		t.Fatalf("expected OccupancyDetected=0 after SetOccupancy(false), got %d", br.occupancy.OccupancyDetected.Value())
+	}
+
+	// Disabling HomeKitOccupancy changes signature and recreates bridge without occupancy sensor.
+	origSrv := br.server
+	cfg2 := *cfg
+	cfg2.Bluetooth.HomeKitOccupancy = false
+	br.Reconfigure(&cfg2)
+	if br.server == origSrv || br.occupancy != nil || br.Status().Accessories != 0 {
+		t.Fatalf("expected Reconfigure to drop occupancy sensor when disabled, got acc=%d occ=%v", br.Status().Accessories, br.occupancy)
+	}
+}

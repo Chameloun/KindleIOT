@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"image"
@@ -10,16 +11,24 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"kindleiot/internal/ble"
 	"kindleiot/internal/calendar"
+	"kindleiot/internal/checklist"
 	"kindleiot/internal/config"
 	"kindleiot/internal/homekit"
+	"kindleiot/internal/httppoll"
+	"kindleiot/internal/imgfetch"
 	"kindleiot/internal/kindle"
 	"kindleiot/internal/mqtt"
+	"kindleiot/internal/rules"
+	"kindleiot/internal/spot"
 	"kindleiot/internal/ui"
 	"kindleiot/internal/weather"
 	"kindleiot/internal/web"
@@ -62,6 +71,11 @@ func main() {
 	var renderer *ui.Renderer
 	var mq *mqtt.Manager
 	var hkBridge *homekit.Bridge
+	var checkStore *checklist.Store
+	var spotSvc *spot.Service
+	var imgSvc *imgfetch.Service
+	var pollSvc *httppoll.Service
+	var rulesEngine *rules.Engine
 
 	var (
 		powerMu         sync.Mutex
@@ -121,6 +135,42 @@ func main() {
 					requestRedraw(false)
 				}
 			},
+			OnTopicMessage: func(brokerID, topic, payload string) {
+				if imgSvc != nil {
+					imgSvc.HandleTopicMessage(brokerID, topic, payload)
+				}
+				if checkStore != nil && renderer != nil {
+					curCfg := renderer.Config()
+					primaryID := curCfg.PrimaryBrokerID()
+					matchBroker := func(wb string) bool {
+						if wb == "" {
+							wb = primaryID
+						}
+						return brokerID == "" || brokerID == wb
+					}
+					text := strings.TrimSpace(payload)
+					if text != "" {
+						for _, p := range curCfg.Pages {
+							for _, w := range p.Widgets {
+								if w.Type == "checklist" && strings.TrimSpace(w.ChecklistAddTopic) == topic && matchBroker(w.BrokerID) {
+									_, _ = checkStore.Add(w.ID, text)
+								}
+							}
+							if p.Floorplan != nil {
+								for _, pin := range p.Floorplan.Pins {
+									w := pin.Widget
+									if w.Type == "checklist" && strings.TrimSpace(w.ChecklistAddTopic) == topic && matchBroker(w.BrokerID) {
+										_, _ = checkStore.Add(w.ID, text)
+									}
+								}
+							}
+						}
+					}
+				}
+				if rulesEngine != nil {
+					rulesEngine.HandleTopic(time.Now(), brokerID, topic, payload)
+				}
+			},
 		},
 	)
 
@@ -161,6 +211,88 @@ func main() {
 	calSvc := calendar.NewService(cfg.Calendar, func() { requestRedraw(false) })
 	renderer.SetCalendarService(calSvc)
 	defer calSvc.Stop()
+
+	checkStore = checklist.NewStore(filepath.Join(filepath.Dir(*cfgPath), "checklists.json"), func() { requestRedraw(false) })
+	checkStore.SyncFromConfig(cfg)
+	renderer.SetChecklistStore(checkStore)
+
+	publishLocalSpot := func(snap spot.Snapshot) {
+		if !snap.Available || snap.Current == nil {
+			return
+		}
+		mq.SetLocalValue("", "local/spot/price_czk", strconv.FormatFloat(snap.Current.PriceCZK, 'f', 2, 64))
+		mq.SetLocalValue("", "local/spot/price_eur", strconv.FormatFloat(snap.Current.PriceEUR, 'f', 2, 64))
+		mq.SetLocalValue("", "local/spot/level", snap.Current.Level)
+		if raw, merr := json.Marshal(snap); merr == nil {
+			mq.SetLocalValue("", "local/spot/json", string(raw))
+		}
+	}
+	spotSvc = spot.NewService(cfg.SpotPrice, func(snap spot.Snapshot) {
+		publishLocalSpot(snap)
+		requestRedraw(false)
+	})
+	renderer.SetSpotService(spotSvc)
+	defer spotSvc.Stop()
+
+	imgSvc = imgfetch.NewService(cfg, func() { requestRedraw(false) })
+	renderer.SetImageService(imgSvc)
+	defer imgSvc.Stop()
+
+	pollSvc = httppoll.NewService(cfg, mq)
+	defer pollSvc.Stop()
+
+	webhookClient := httppoll.NewHTTPClient(8 * time.Second)
+	rulesEngine = rules.NewEngine(cfg, rules.Executor{
+		ExecuteWidget: func(widgetID, state string) {
+			if renderer.TriggerWidget(widgetID, state) {
+				requestRedraw(false)
+			}
+		},
+		PublishMQTT: func(brokerID, topic, payload string) {
+			_ = mq.Publish(brokerID, topic, 0, false, payload)
+		},
+		FireWebhook: func(method, rawURL, body string) {
+			go func() {
+				wctx, wcancel := context.WithTimeout(context.Background(), 8*time.Second)
+				defer wcancel()
+				if werr := httppoll.FireWebhook(wctx, webhookClient, method, rawURL, body, nil, ""); werr != nil {
+					log.Printf("rule webhook error (%s): %v", rawURL, werr)
+				}
+			}()
+		},
+		SwitchPage: func(sel string) bool {
+			if _, _, ok := renderer.SetActivePageBySelector(sel); ok {
+				wakeBacklight()
+				requestRedraw(true)
+				return true
+			}
+			return false
+		},
+		ShowNotify: func(text string, dur time.Duration) {
+			if text != "" {
+				renderer.SetStandby(false)
+				wakeBacklight()
+				renderer.ShowNotice(text, dur)
+				requestRedraw(false)
+			}
+		},
+		SetBrightness: func(lvl int) {
+			powerMu.Lock()
+			lastActivity = time.Now()
+			backlightDimmed = (lvl == 0)
+			powerMu.Unlock()
+			hw.SetBrightness(lvl)
+			requestRedraw(false)
+		},
+		SetStandby: func(active bool) {
+			if renderer.SetStandby(active) {
+				if !active {
+					wakeBacklight()
+				}
+				requestRedraw(true)
+			}
+		},
+	})
 
 	var xwin *ui.X11Window
 	if !*headless {
@@ -224,8 +356,122 @@ func main() {
 
 	weatherSvc.Start()
 	calSvc.Start()
+	spotSvc.Start()
+	imgSvc.Start()
+	pollSvc.Start()
 	go mq.Connect()
 	defer mq.Disconnect()
+
+	var (
+		bleLocalMu       sync.Mutex
+		lastBLELocalAt   time.Time
+		lastBLELocalRSSI int
+		lastBLELocalDev  string
+	)
+	updateLocalBLE := func(present bool, deviceName string, rssi int) {
+		state := "OFF"
+		dev := "-"
+		rssiStr := ""
+		if present {
+			state = "ON"
+			if deviceName != "" {
+				dev = deviceName
+			}
+			rssiStr = strconv.Itoa(rssi)
+		}
+		mq.SetLocalValue("", "local/ble/presence", state)
+		mq.SetLocalValue("", "local/ble/device", dev)
+		mq.SetLocalValue("", "local/ble/rssi", rssiStr)
+		if raw, err := json.Marshal(struct {
+			Present bool   `json:"present"`
+			Device  string `json:"device,omitempty"`
+			RSSI    int    `json:"rssi,omitempty"`
+		}{
+			Present: present,
+			Device:  deviceName,
+			RSSI:    rssi,
+		}); err == nil {
+			mq.SetLocalValue("", "local/ble/json", string(raw))
+		}
+	}
+	if cfg.Bluetooth.Enabled {
+		updateLocalBLE(false, "", 0)
+	}
+
+	bleSvc := ble.NewService(cfg.Bluetooth, hw.IsKindle(), ble.Callbacks{
+		OnPresenceChange: func(present bool, deviceName string, rssi int) {
+			curCfg := renderer.Config()
+			bleLocalMu.Lock()
+			lastBLELocalAt = time.Now()
+			lastBLELocalRSSI = rssi
+			lastBLELocalDev = deviceName
+			bleLocalMu.Unlock()
+			updateLocalBLE(present, deviceName, rssi)
+
+			if hkBridge != nil {
+				hkBridge.SetOccupancy(present)
+			}
+			if rulesEngine != nil {
+				rulesEngine.HandleBLEPresence(time.Now(), present, deviceName)
+			}
+			if curCfg.Bluetooth.PublishMQTT {
+				mq.PublishPresence(present, deviceName, rssi)
+			}
+			if present {
+				woke := false
+				if curCfg.Bluetooth.WakeStandby && renderer.IsStandby() {
+					if renderer.SetStandby(false) {
+						woke = true
+					}
+				}
+				if curCfg.Bluetooth.WakeBacklight {
+					wakeBacklight()
+				}
+				if woke {
+					requestRedraw(true)
+				}
+			}
+		},
+		OnProximityPing: func(deviceName string, rssi int) {
+			now := time.Now()
+			bleLocalMu.Lock()
+			deltaRSSI := rssi - lastBLELocalRSSI
+			if deltaRSSI < 0 {
+				deltaRSSI = -deltaRSSI
+			}
+			shouldLocalUpdate := deviceName != lastBLELocalDev || deltaRSSI >= 4 || now.Sub(lastBLELocalAt) >= 10*time.Second
+			if shouldLocalUpdate {
+				lastBLELocalAt = now
+				lastBLELocalRSSI = rssi
+				lastBLELocalDev = deviceName
+			}
+			bleLocalMu.Unlock()
+			if shouldLocalUpdate {
+				updateLocalBLE(true, deviceName, rssi)
+			}
+
+			curCfg := renderer.Config()
+			if !curCfg.Bluetooth.KeepAwake {
+				return
+			}
+			powerMu.Lock()
+			lastActivity = now
+			dimmed := backlightDimmed
+			powerMu.Unlock()
+			if curCfg.Bluetooth.WakeStandby && renderer.IsStandby() {
+				if renderer.SetStandby(false) {
+					if curCfg.Bluetooth.WakeBacklight {
+						wakeBacklight()
+					}
+					requestRedraw(true)
+				}
+			} else if curCfg.Bluetooth.WakeBacklight && dimmed {
+				wakeBacklight()
+			}
+		},
+	})
+	bleSvc.Start()
+	defer bleSvc.Stop()
 
 	var webPort string
 	if cfg.Web.Listen != "" {
@@ -252,8 +498,19 @@ func main() {
 				}
 				mq.Reconfigure(newCfg)
 				hkBridge.Reconfigure(newCfg)
+				if newCfg.Bluetooth.Enabled {
+					if _, ok := mq.GetTopic("", "local/ble/presence"); !ok {
+						updateLocalBLE(false, "", 0)
+					}
+				}
+				bleSvc.Reconfigure(newCfg.Bluetooth)
 				weatherSvc.Reconfigure(newCfg.Weather)
 				calSvc.Reconfigure(newCfg.Calendar)
+				checkStore.SyncFromConfig(newCfg)
+				spotSvc.Reconfigure(newCfg.SpotPrice)
+				imgSvc.Reconfigure(newCfg)
+				pollSvc.Reconfigure(newCfg)
+				rulesEngine.Reconfigure(newCfg)
 				wakeBacklight()
 				requestRedraw(true)
 			},
@@ -262,6 +519,85 @@ func main() {
 			},
 			ResetHomeKit: func() error {
 				return hkBridge.ResetPairings()
+			},
+			BLEStatus: func() ble.Status {
+				return bleSvc.Status()
+			},
+			ApplyOTA: func(data []byte) error {
+				exePath, exeErr := os.Executable()
+				if exeErr != nil {
+					return exeErr
+				}
+				if resolved, rerr := filepath.EvalSymlinks(exePath); rerr == nil {
+					exePath = resolved
+				}
+				staged, stErr := web.WriteStagedBinary(exePath, data)
+				if stErr != nil {
+					return stErr
+				}
+				return web.SpawnOTARestart(exePath, staged, os.Args[1:])
+			},
+			Notify: func(text string, dur time.Duration) {
+				if renderer != nil && text != "" {
+					renderer.SetStandby(false)
+					wakeBacklight()
+					renderer.ShowNotice(text, dur)
+					requestRedraw(false)
+				}
+			},
+			SwitchPage: func(sel string) (string, string, bool) {
+				pid, title, ok := renderer.SetActivePageBySelector(sel)
+				if ok {
+					wakeBacklight()
+					requestRedraw(true)
+				}
+				return pid, title, ok
+			},
+			SetStandby: func(mode string) bool {
+				var target bool
+				switch strings.ToLower(strings.TrimSpace(mode)) {
+				case "true", "on", "1":
+					target = true
+				case "false", "off", "0":
+					target = false
+				default:
+					target = !renderer.IsStandby()
+				}
+				if renderer.SetStandby(target) {
+					if !target {
+						wakeBacklight()
+					}
+					requestRedraw(true)
+				}
+				return renderer.IsStandby()
+			},
+			SetBrightness: func(lvl int) {
+				powerMu.Lock()
+				lastActivity = time.Now()
+				backlightDimmed = (lvl == 0)
+				powerMu.Unlock()
+				hw.SetBrightness(lvl)
+				requestRedraw(false)
+			},
+			TriggerWidget: func(widgetID, state string) bool {
+				ok := renderer.TriggerWidget(widgetID, state)
+				if ok {
+					requestRedraw(false)
+				}
+				return ok
+			},
+			ChecklistStore: checkStore,
+			SpotStatus: func() spot.Snapshot {
+				return spotSvc.Snapshot()
+			},
+			BatteryGuardStatus: func() rules.BatteryGuardStatus {
+				return rulesEngine.BatteryStatus()
+			},
+			RulesLog: func() []rules.ExecutionLog {
+				return rulesEngine.RecentLogs()
+			},
+			RefreshImage: func(widgetID string) {
+				imgSvc.TriggerFetch(widgetID)
 			},
 		})
 		httpSrv := &http.Server{
@@ -311,6 +647,7 @@ func main() {
 	teleTick := time.NewTicker(time.Duration(cfg.Device.TelemetryIntervalSec) * time.Second)
 	defer teleTick.Stop()
 
+	var lastBatteryCheck time.Time
 	checkIdleAndSchedule := func() {
 		now := time.Now()
 		curCfg := renderer.Config()
@@ -339,6 +676,15 @@ func main() {
 			requestRedraw(false)
 		}
 
+		if rulesEngine != nil {
+			rulesEngine.TickTime(now)
+			if curCfg.BatteryGuard.Enabled && (lastBatteryCheck.IsZero() || now.Sub(lastBatteryCheck) >= 30*time.Second) {
+				lastBatteryCheck = now
+				st := hw.ReadStatus()
+				rulesEngine.EvaluateBattery(now, st.Battery, st.Charging)
+			}
+		}
+
 		if curCfg.Device.StandbyTimeoutSec > 0 && !renderer.IsStandby() && idleSec >= curCfg.Device.StandbyTimeoutSec {
 			if renderer.SetStandby(true) {
 				requestRedraw(true)
@@ -357,6 +703,10 @@ func main() {
 		}
 		st := hw.ReadStatus()
 		mq.PublishTelemetry(st.Battery, st.Charging, st.IP, st.Brightness)
+		if rulesEngine != nil {
+			lastBatteryCheck = time.Now()
+			rulesEngine.EvaluateBattery(lastBatteryCheck, st.Battery, st.Charging)
+		}
 	}
 	publishTele()
 

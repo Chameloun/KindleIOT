@@ -104,6 +104,26 @@ type uiStrings struct {
 	StandbyWeatherSub   string
 	NextEventPrefix     string
 	StandbyWakePrompt   string
+	ChecklistEmpty      string
+	ChecklistClearDone  string
+	ChecklistMoreFmt    string
+	SpotTitle           string
+	SpotEnableHint      string
+	SpotLoading         string
+	SpotLevelLow        string
+	SpotLevelMed        string
+	SpotLevelHigh       string
+	SpotTodayTitle      string
+	SpotTomorrowTitle   string
+	SpotTomorrowWait    string
+	SpotCheapestFmt     string
+	SpotModalTitle      string
+	SpotAvgFmt          string
+	ImageNoURL          string
+	ImageLoading        string
+	ImageErrPrefix      string
+	ImageRefreshing     string
+	WebhookErrPrefix    string
 }
 
 var langEN = uiStrings{
@@ -201,6 +221,26 @@ var langEN = uiStrings{
 	StandbyWeatherSub:   "Today %.0f° / %.0f° • Rain %d%%",
 	NextEventPrefix:     "NEXT EVENT • ",
 	StandbyWakePrompt:   "Tap anywhere to wake the control panel",
+	ChecklistEmpty:      "Empty list — add items in Web UI",
+	ChecklistClearDone:  "Clear done",
+	ChecklistMoreFmt:    "+ %d more items",
+	SpotTitle:           "Spot Prices",
+	SpotEnableHint:      "Enable Spot Prices (OTE) in Settings",
+	SpotLoading:         "Loading OTE spot prices…",
+	SpotLevelLow:        "CHEAP",
+	SpotLevelMed:        "NORMAL",
+	SpotLevelHigh:       "EXPENSIVE",
+	SpotTodayTitle:      "Today (0–23h)",
+	SpotTomorrowTitle:   "Tomorrow (0–23h)",
+	SpotTomorrowWait:    "Tomorrow's OTE prices are published after 13:30.",
+	SpotCheapestFmt:     "Best: %02d:00 (%s) • 3h from %02d:00",
+	SpotModalTitle:      "Czech OTE Spot Prices",
+	SpotAvgFmt:          "Avg %s",
+	ImageNoURL:          "Set image URL in Web Editor",
+	ImageLoading:        "Downloading image…",
+	ImageErrPrefix:      "Image error: ",
+	ImageRefreshing:     "↻ Refreshing image…",
+	WebhookErrPrefix:    "Webhook error: ",
 }
 
 var langCS = uiStrings{
@@ -298,6 +338,26 @@ var langCS = uiStrings{
 	StandbyWeatherSub:   "Dnes %.0f° / %.0f° • Srážky %d%%",
 	NextEventPrefix:     "DALŠÍ UDÁLOST • ",
 	StandbyWakePrompt:   "Klepněte kamkoliv pro probuzení ovládacího panelu",
+	ChecklistEmpty:      "Prázdný seznam — přidejte položky ve Web UI",
+	ChecklistClearDone:  "Smazat hotové",
+	ChecklistMoreFmt:    "+ dalších %d položek",
+	SpotTitle:           "Spotová elektřina",
+	SpotEnableHint:      "Zapněte Spotové ceny (OTE) v Nastavení",
+	SpotLoading:         "Načítám ceny elektřiny OTE…",
+	SpotLevelLow:        "LEVNÁ",
+	SpotLevelMed:        "STŘEDNÍ",
+	SpotLevelHigh:       "DRAHÁ",
+	SpotTodayTitle:      "Dnes (0–23h)",
+	SpotTomorrowTitle:   "Zítra (0–23h)",
+	SpotTomorrowWait:    "Zítřejší ceny OTE vycházejí obvykle po 13:30.",
+	SpotCheapestFmt:     "Nejlevněji: %02d:00 (%s) • 3h blok od %02d:00",
+	SpotModalTitle:      "Spotové ceny elektřiny (OTE)",
+	SpotAvgFmt:          "Průměr %s",
+	ImageNoURL:          "Nastavte URL obrázku ve Web Editoru",
+	ImageLoading:        "Stahuji obrázek…",
+	ImageErrPrefix:      "Chyba obrázku: ",
+	ImageRefreshing:     "↻ Obnovuji obrázek…",
+	WebhookErrPrefix:    "Chyba webhooku: ",
 }
 
 func stringsForLang(lang string) uiStrings {

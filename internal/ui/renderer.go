@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"math"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,9 +18,13 @@ import (
 	"golang.org/x/image/math/fixed"
 
 	"kindleiot/internal/calendar"
+	"kindleiot/internal/checklist"
 	"kindleiot/internal/config"
+	"kindleiot/internal/httppoll"
+	"kindleiot/internal/imgfetch"
 	"kindleiot/internal/kindle"
 	"kindleiot/internal/mqtt"
+	"kindleiot/internal/spot"
 	"kindleiot/internal/weather"
 )
 
@@ -62,6 +68,10 @@ const (
 	ActionOpenWeatherDetail
 	ActionOpenCalendarDetail
 	ActionToggleTheme
+	ActionChecklistToggle
+	ActionChecklistClearDone
+	ActionOpenSpotDetail
+	ActionImageRefresh
 )
 
 // HitAction describes an action bound to a screen rectangle.
@@ -109,6 +119,10 @@ type Renderer struct {
 	hw                 *kindle.System
 	weatherSvc         *weather.Service
 	calSvc             *calendar.Service
+	spotSvc            *spot.Service
+	imgSvc             *imgfetch.Service
+	checkStore         *checklist.Store
+	httpClient         *http.Client
 	ctrl               Controller
 	fonts              fontSet
 	canvas             *image.Gray
@@ -121,6 +135,7 @@ type Renderer struct {
 	detailWidget       *config.WidgetConfig
 	weatherDetailOpen  bool
 	calendarDetailOpen bool
+	spotDetailOpen     bool
 	darkOverride       *bool
 	activeTimers       map[string]activeTimer
 	lastSchedFired     map[string]string
@@ -150,6 +165,7 @@ func NewRenderer(cfg *config.Config, mq *mqtt.Manager, hw *kindle.System, ctrl C
 		cfg:            cfg,
 		mq:             mq,
 		hw:             hw,
+		httpClient:     httppoll.NewHTTPClient(8 * time.Second),
 		ctrl:           ctrl,
 		fonts:          fs,
 		canvas:         image.NewGray(image.Rect(0, 0, w, h)),
@@ -220,6 +236,105 @@ func (r *Renderer) SetCalendarService(cs *calendar.Service) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calSvc = cs
+}
+
+// SetSpotService attaches the Czech OTE electricity spot price provider to the renderer.
+func (r *Renderer) SetSpotService(ss *spot.Service) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.spotSvc = ss
+}
+
+// SetImageService attaches the e-ink image fetching/dithering service to the renderer.
+func (r *Renderer) SetImageService(is *imgfetch.Service) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.imgSvc = is
+}
+
+// SetChecklistStore attaches the persistent checklist store to the renderer.
+func (r *Renderer) SetChecklistStore(cs *checklist.Store) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.checkStore = cs
+}
+
+// SetActivePageBySelector switches the active dashboard page by ID, title (case-insensitive),
+// or 1-based visible page index, waking standby and closing modals.
+func (r *Renderer) SetActivePageBySelector(sel string) (string, string, bool) {
+	q := strings.TrimSpace(sel)
+	if q == "" {
+		return "", "", false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	targetIdx := -1
+	for i, p := range r.cfg.Pages {
+		if p.Hidden {
+			continue
+		}
+		if p.ID == q || strings.EqualFold(p.Title, q) {
+			targetIdx = i
+			break
+		}
+	}
+	if targetIdx < 0 {
+		if idx, err := strconv.Atoi(q); err == nil && idx >= 1 {
+			vis := r.visiblePageIndices()
+			if idx-1 < len(vis) {
+				targetIdx = vis[idx-1]
+			}
+		}
+	}
+	if targetIdx < 0 {
+		return "", "", false
+	}
+	r.activePage = targetIdx
+	r.subPage = 0
+	r.standbyMode = false
+	r.showSettings = false
+	r.detailWidget = nil
+	r.weatherDetailOpen = false
+	r.calendarDetailOpen = false
+	r.spotDetailOpen = false
+	p := r.cfg.Pages[targetIdx]
+	return p.ID, p.Title, true
+}
+
+// TriggerWidget triggers a switch (ON/OFF/TOGGLE) or button/macro widget by ID.
+func (r *Renderer) TriggerWidget(widgetID, state string) bool {
+	widgetID = strings.TrimSpace(widgetID)
+	if widgetID == "" {
+		return false
+	}
+	r.mu.Lock()
+	wd, ok := r.lookupWidgetByIDLocked(widgetID)
+	r.mu.Unlock()
+	if !ok {
+		return false
+	}
+	switch wd.Type {
+	case "switch":
+		if strings.TrimSpace(state) == "" {
+			state = "TOGGLE"
+		}
+		r.executeWidgetAction(wd.ID, state, wd.BrokerID, "", "", wd.QoS, wd.Retain)
+		return true
+	case "button":
+		if len(wd.MacroActions) > 0 {
+			r.executeMacro(wd)
+		}
+		if strings.TrimSpace(wd.CommandTopic) != "" {
+			_ = r.publishWithFeedback(wd.BrokerID, wd.CommandTopic, wd.QoS, wd.Retain, wd.Payload)
+		}
+		if strings.TrimSpace(wd.WebhookURL) != "" {
+			r.fireWebhookAsync(wd.WebhookMethod, wd.WebhookURL, wd.WebhookBody, wd.WebhookHeaders, "PRESS")
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 // SetStandby switches the standby screensaver mode on or off and reports whether the state changed.
@@ -428,6 +543,10 @@ func (r *Renderer) Render() (*image.Gray, bool) {
 	}
 	if r.calendarDetailOpen {
 		r.drawCalendarDetailModal(w, topH+10, h-16, now)
+		return r.finishFrame(now, needFlash)
+	}
+	if r.spotDetailOpen {
+		r.drawSpotPriceDetailModal(w, topH+10, h-16, now)
 		return r.finishFrame(now, needFlash)
 	}
 	if r.detailWidget != nil {
@@ -660,89 +779,70 @@ func (r *Renderer) drawPageContent(w, top, bottom int, now time.Time) {
 	padX := 14
 	gapX := 12
 	gapY := 12
-	cardH := 130
+	if cols >= 4 {
+		padX = 10
+		gapX = 8
+	}
+	if page.Rows >= 5 {
+		gapY = 8
+	}
 
 	availH := bottom - top
-	rowsPerPage := (availH + gapY) / (cardH + gapY)
-	if rowsPerPage < 1 {
-		rowsPerPage = 1
+	var (
+		rowsPerPage   int
+		cellH         int
+		placed        []placedWidget
+		totalRows     int
+		totalSubPages int
+	)
+
+	if page.Rows > 0 {
+		rowsPerPage = clampInt(page.Rows, 1, 6)
+		placed, totalRows = layoutGrid(page.Widgets, cols, rowsPerPage)
+		totalSubPages = maxInt(1, (totalRows+rowsPerPage-1)/rowsPerPage)
+		if totalSubPages > 1 {
+			pagerH := 38
+			availH -= pagerH + 6
+		}
+		cellH = (availH - (rowsPerPage-1)*gapY) / rowsPerPage
+		if cellH < 48 {
+			cellH = 48
+		}
+	} else {
+		cardH := 130
+		rowsPerPage = maxInt(1, (availH+gapY)/(cardH+gapY))
+		placed, totalRows = layoutGrid(page.Widgets, cols, rowsPerPage)
+		totalSubPages = maxInt(1, (totalRows+rowsPerPage-1)/rowsPerPage)
+		if totalSubPages > 1 {
+			pagerH := 38
+			availH -= pagerH + 6
+			rowsPerPage = maxInt(1, (availH+gapY)/(cardH+gapY))
+			placed, totalRows = layoutGrid(page.Widgets, cols, rowsPerPage)
+			totalSubPages = maxInt(1, (totalRows+rowsPerPage-1)/rowsPerPage)
+		}
+		cellH = cardH
 	}
 
-	type placedWidget struct {
-		w   config.WidgetConfig
-		row int
-		col int
-	}
-
-	// Flow widgets into grid rows.
-	var placed []placedWidget
-	curRow, curCol := 0, 0
-	for _, wd := range page.Widgets {
-		span := wd.Span
-		if span <= 0 {
-			span = 1
-		}
-		if span > cols {
-			span = cols
-		}
-		if curCol+span > cols {
-			curRow++
-			curCol = 0
-		}
-		placed = append(placed, placedWidget{w: wd, row: curRow, col: curCol})
-		curCol += span
-		if curCol >= cols {
-			curRow++
-			curCol = 0
-		}
-	}
-
-	totalRows := curRow
-	if curCol > 0 {
-		totalRows++
-	}
-	totalSubPages := (totalRows + rowsPerPage - 1) / rowsPerPage
-	if totalSubPages < 1 {
-		totalSubPages = 1
-	}
 	if r.subPage >= totalSubPages {
 		r.subPage = totalSubPages - 1
 	}
-
-	// Reserve space for sub-page pager if needed.
-	if totalSubPages > 1 {
-		pagerH := 38
-		availH -= pagerH + 6
-		rowsPerPage = (availH + gapY) / (cardH + gapY)
-		if rowsPerPage < 1 {
-			rowsPerPage = 1
-		}
-		totalSubPages = (totalRows + rowsPerPage - 1) / rowsPerPage
-		if r.subPage >= totalSubPages {
-			r.subPage = totalSubPages - 1
-		}
-	}
-
 	startRow := r.subPage * rowsPerPage
 	endRow := startRow + rowsPerPage
 
 	colW := (w - 2*padX - (cols-1)*gapX) / cols
 	for _, item := range placed {
-		if item.row < startRow || item.row >= endRow {
+		if item.row+item.rowSpan <= startRow || item.row >= endRow {
 			continue
 		}
-		relRow := item.row - startRow
-		span := item.w.Span
-		if span <= 0 {
-			span = 1
-		}
-		if span > cols {
-			span = cols
-		}
+		relRow := maxInt(0, item.row-startRow)
+		visEndRow := minInt(endRow, item.row+item.rowSpan)
+		visRowSpan := maxInt(1, visEndRow-maxInt(startRow, item.row))
+
 		x0 := padX + item.col*(colW+gapX)
-		y0 := top + relRow*(cardH+gapY)
-		cw := span*colW + (span-1)*gapX
-		rect := image.Rect(x0, y0, x0+cw, y0+cardH)
+		y0 := top + relRow*(cellH+gapY)
+		cw := item.span*colW + (item.span-1)*gapX
+		ch := visRowSpan*cellH + (visRowSpan-1)*gapY
+		rect := image.Rect(x0, y0, x0+cw, y0+ch)
 		r.drawWidgetCard(rect, item.w, now)
 	}
 
@@ -786,6 +886,12 @@ func (r *Renderer) drawWidgetCard(rect image.Rectangle, wd config.WidgetConfig, 
 		r.drawCalendarCard(rect, wd, now)
 	case "select":
 		r.drawSelectCard(rect, wd)
+	case "checklist":
+		r.drawChecklistCard(rect, wd)
+	case "spot_price":
+		r.drawSpotPriceCard(rect, wd, now)
+	case "image":
+		r.drawImageCard(rect, wd, now)
 	}
 }
 
@@ -820,27 +926,45 @@ func (r *Renderer) drawSwitchCard(rect image.Rectangle, wd config.WidgetConfig) 
 	}
 
 	icon := resolveWidgetIcon(wd)
-	drawIconBadge(r.canvas, face.Min.X+28, face.Min.Y+30, 16, icon, isOn)
-
-	textX := face.Min.X + 54
-	maxTextW := face.Dx() - 66
-	drawText(r.canvas, r.fonts.bold20, textX, face.Min.Y+29, fg,
-		truncateText(r.fonts.bold20, pinPrefixedLabel(wd), maxTextW))
-	if wd.Subtitle != "" {
-		drawText(r.canvas, r.fonts.small, textX, face.Min.Y+48, subCol,
-			truncateText(r.fonts.small, wd.Subtitle, maxTextW))
+	compact := face.Dx() < 185
+	var textX, maxTextW int
+	if compact {
+		drawIconBadge(r.canvas, face.Min.X+20, face.Min.Y+24, 12, icon, isOn)
+		textX = face.Min.X + 38
+		maxTextW = maxInt(20, face.Dx()-46)
+		drawText(r.canvas, r.fonts.bold16, textX, face.Min.Y+25, fg,
+			truncateText(r.fonts.bold16, pinPrefixedLabel(wd), maxTextW))
+		if wd.Subtitle != "" {
+			drawText(r.canvas, r.fonts.small, textX, face.Min.Y+42, subCol,
+				truncateText(r.fonts.small, wd.Subtitle, maxTextW))
+		}
+	} else {
+		drawIconBadge(r.canvas, face.Min.X+28, face.Min.Y+30, 16, icon, isOn)
+		textX = face.Min.X + 54
+		maxTextW = maxInt(20, face.Dx()-66)
+		drawText(r.canvas, r.fonts.bold20, textX, face.Min.Y+29, fg,
+			truncateText(r.fonts.bold20, pinPrefixedLabel(wd), maxTextW))
+		if wd.Subtitle != "" {
+			drawText(r.canvas, r.fonts.small, textX, face.Min.Y+48, subCol,
+				truncateText(r.fonts.small, wd.Subtitle, maxTextW))
+		}
 	}
 
 	// Bottom divider + status label on left + physical toggle switch on right
 	divY := face.Max.Y - 46
+	if face.Dy() < 105 {
+		divY = face.Max.Y - 38
+	}
 	if isOn {
-		drawDashedHLine(r.canvas, face.Min.X+12, face.Max.X-12, divY, 3, 3, colDark)
+		drawDashedHLine(r.canvas, face.Min.X+10, face.Max.X-10, divY, 3, 3, colDark)
 	} else {
-		drawDashedHLine(r.canvas, face.Min.X+12, face.Max.X-12, divY, 3, 3, colSubtleGray)
+		drawDashedHLine(r.canvas, face.Min.X+10, face.Max.X-10, divY, 3, 3, colSubtleGray)
 	}
 
-	drawText(r.canvas, r.fonts.bold16, face.Min.X+14, face.Max.Y-17, fg, statusText)
-	swRect := image.Rect(face.Max.X-80, face.Max.Y-38, face.Max.X-14, face.Max.Y-10)
+	swW := minInt(66, maxInt(44, face.Dx()/2-10))
+	drawText(r.canvas, r.fonts.bold16, face.Min.X+10, face.Max.Y-16, fg,
+		truncateText(r.fonts.bold16, statusText, maxInt(16, face.Dx()-swW-22)))
+	swRect := image.Rect(face.Max.X-10-swW, face.Max.Y-36, face.Max.X-10, face.Max.Y-9)
 	drawToggleSwitch(r.canvas, swRect, isOn)
 
 	r.hits = append(r.hits, HitAction{Rect: rect, Type: ActionWidgetToggle, Widget: wd})
@@ -859,12 +983,21 @@ func (r *Renderer) drawButtonCard(rect image.Rectangle, wd config.WidgetConfig, 
 	}
 
 	icon := resolveWidgetIcon(wd)
-	drawIconBadge(r.canvas, face.Min.X+28, face.Min.Y+30, 16, icon, confirming)
-
-	textX := face.Min.X + 54
-	maxTextW := face.Dx() - 66
-	drawText(r.canvas, r.fonts.bold20, textX, face.Min.Y+29, fg,
-		truncateText(r.fonts.bold20, pinPrefixedLabel(wd), maxTextW))
+	compact := face.Dx() < 185
+	var textX, maxTextW int
+	if compact {
+		drawIconBadge(r.canvas, face.Min.X+20, face.Min.Y+24, 12, icon, confirming)
+		textX = face.Min.X + 38
+		maxTextW = maxInt(20, face.Dx()-46)
+		drawText(r.canvas, r.fonts.bold16, textX, face.Min.Y+25, fg,
+			truncateText(r.fonts.bold16, pinPrefixedLabel(wd), maxTextW))
+	} else {
+		drawIconBadge(r.canvas, face.Min.X+28, face.Min.Y+30, 16, icon, confirming)
+		textX = face.Min.X + 54
+		maxTextW = maxInt(20, face.Dx()-66)
+		drawText(r.canvas, r.fonts.bold20, textX, face.Min.Y+29, fg,
+			truncateText(r.fonts.bold20, pinPrefixedLabel(wd), maxTextW))
+	}
 
 	sub := wd.Subtitle
 	if sub == "" && len(wd.MacroActions) > 0 {
@@ -885,7 +1018,11 @@ func (r *Renderer) drawButtonCard(rect image.Rectangle, wd config.WidgetConfig, 
 		sub = tr.TapAgainConfirm
 	}
 	if sub != "" {
-		drawText(r.canvas, r.fonts.small, textX, face.Min.Y+48, subCol,
+		subY := face.Min.Y + 48
+		if compact {
+			subY = face.Min.Y + 42
+		}
+		drawText(r.canvas, r.fonts.small, textX, subY, subCol,
 			truncateText(r.fonts.small, sub, maxTextW))
 	}
 
@@ -927,25 +1064,37 @@ func (r *Renderer) drawStepperCard(rect image.Rectangle, wd config.WidgetConfig)
 	}
 
 	// Range hint in top right
-	drawRightText(r.canvas, r.fonts.small, face.Max.X-14, face.Min.Y+28, colDark,
-		fmt.Sprintf("%s–%s%s", formatNumber(wd.Min, wd.EffectivePrecision()), formatNumber(wd.Max, wd.EffectivePrecision()), suffixUnit(wd.Unit)))
+	rangeTxt := fmt.Sprintf("%s–%s%s", formatNumber(wd.Min, wd.EffectivePrecision()), formatNumber(wd.Max, wd.EffectivePrecision()), suffixUnit(wd.Unit))
+	if face.Dx() >= 210 {
+		drawRightText(r.canvas, r.fonts.small, face.Max.X-14, face.Min.Y+28, colDark, rangeTxt)
+	}
 
-	btnW := 74
-	btnH := 66
+	btnW := minInt(74, maxInt(36, (face.Dx()-36)/4))
+	btnH := minInt(80, maxInt(46, face.Dy()-52))
 	by0 := face.Max.Y - btnH - 10
-	minusR := image.Rect(face.Min.X+12, by0, face.Min.X+12+btnW, by0+btnH)
-	plusR := image.Rect(face.Max.X-12-btnW, by0, face.Max.X-12, by0+btnH)
+	if face.Dy() >= 170 {
+		by0 = face.Min.Y + 40 + (face.Dy()-46-btnH)/2
+	}
+	minusR := image.Rect(face.Min.X+10, by0, face.Min.X+10+btnW, by0+btnH)
+	plusR := image.Rect(face.Max.X-10-btnW, by0, face.Max.X-10, by0+btnH)
 
 	drawRoundedButton(r.canvas, minusR, 10, r.fonts.bold34, "−", false)
 	drawRoundedButton(r.canvas, plusR, 10, r.fonts.bold34, "+", false)
 
 	// Framed central display with mini progress bar
-	valBox := image.Rect(minusR.Max.X+10, by0+2, plusR.Min.X-10, by0+btnH-2)
+	valBox := image.Rect(minusR.Max.X+8, by0+2, plusR.Min.X-8, by0+btnH-2)
 	fillRoundedRect(r.canvas, valBox, 8, colBgCanvas)
 	drawRoundedRect(r.canvas, valBox, 8, 1, colMidGray)
 
 	textArea := image.Rect(valBox.Min.X, valBox.Min.Y, valBox.Max.X, valBox.Max.Y-12)
-	drawCenteredText(r.canvas, r.fonts.bold28, textArea, colBlack, truncateText(r.fonts.bold28, valText, valBox.Dx()-8))
+	valFont := r.fonts.bold28
+	if font.MeasureString(valFont, valText).Ceil() > valBox.Dx()-8 {
+		valFont = r.fonts.bold20
+		if font.MeasureString(valFont, valText).Ceil() > valBox.Dx()-8 {
+			valFont = r.fonts.bold16
+		}
+	}
+	drawCenteredText(r.canvas, valFont, textArea, colBlack, truncateText(valFont, valText, valBox.Dx()-8))
 
 	// Progress track inside valBox bottom
 	bar := image.Rect(valBox.Min.X+12, valBox.Max.Y-11, valBox.Max.X-12, valBox.Max.Y-5)
@@ -1020,7 +1169,39 @@ func (r *Renderer) drawSensorCard(rect image.Rectangle, wd config.WidgetConfig, 
 	}
 
 	mainRect := image.Rect(face.Min.X+10, face.Min.Y+42, face.Max.X-10, face.Max.Y-32)
-	drawCenteredText(r.canvas, r.fonts.bold34, mainRect, colBlack, truncateText(r.fonts.bold34, valText, mainRect.Dx()))
+	valFont := r.fonts.bold34
+	if font.MeasureString(valFont, valText).Ceil() > mainRect.Dx() {
+		valFont = r.fonts.bold28
+		if font.MeasureString(valFont, valText).Ceil() > mainRect.Dx() {
+			valFont = r.fonts.bold20
+		}
+	}
+
+	var pts []mqtt.HistoryPoint
+	if face.Dy() >= 220 && wd.StateTopic != "" {
+		pts = r.mq.GetHistory(wd.BrokerID, wd.StateTopic, wd.StateJSONPath, 40)
+	}
+	if len(pts) >= 2 {
+		readRect := image.Rect(face.Min.X+10, face.Min.Y+42, face.Max.X-10, face.Min.Y+96)
+		drawCenteredText(r.canvas, valFont, readRect, colBlack, truncateText(valFont, valText, readRect.Dx()))
+		vals := make([]float64, len(pts))
+		minV, maxV := pts[0].Value, pts[0].Value
+		for i, p := range pts {
+			vals[i] = p.Value
+			if p.Value < minV {
+				minV = p.Value
+			}
+			if p.Value > maxV {
+				maxV = p.Value
+			}
+		}
+		plot := image.Rect(face.Min.X+12, face.Min.Y+100, face.Max.X-12, face.Max.Y-34)
+		if plot.Dy() >= 36 && plot.Dx() >= 60 {
+			r.drawDitheredPlot(plot, vals, minV, maxV, 4, 2)
+		}
+	} else {
+		drawCenteredText(r.canvas, valFont, mainRect, colBlack, truncateText(valFont, valText, mainRect.Dx()))
+	}
 
 	if wd.SecondaryTopic != "" {
 		secText := "—"
@@ -1128,7 +1309,8 @@ func (r *Renderer) drawGaugeCard(rect image.Rectangle, wd config.WidgetConfig) {
 	}
 
 	// Framed digital value badge at bottom center
-	valBox := image.Rect(cx-54, cy-20, cx+54, cy+4)
+	halfW := minInt(54, maxInt(28, face.Dx()/2-10))
+	valBox := image.Rect(cx-halfW, cy-20, cx+halfW, cy+4)
 	fillRoundedRect(r.canvas, valBox, 5, colWhite)
 	drawRoundedRect(r.canvas, valBox, 5, 1, colBlack)
 	drawCenteredText(r.canvas, r.fonts.bold16, valBox, colBlack, truncateText(r.fonts.bold16, valText, valBox.Dx()-6))
@@ -1397,21 +1579,49 @@ func (r *Renderer) drawSelectCard(rect image.Rectangle, wd config.WidgetConfig) 
 	if n == 0 {
 		return
 	}
-	padX := 12
-	gap := 8
+	padX := 10
+	gap := 6
 	optW := (face.Dx() - 2*padX - (n-1)*gap) / n
-	by0 := face.Min.Y + 48
+	by0 := face.Min.Y + 46
 	by1 := face.Max.Y - 10
 
+	gridCols := n
+	if face.Dy() >= 175 && (face.Dx() < 220 || (n > 2 && optW < 85)) {
+		if face.Dx() >= 190 && n >= 4 {
+			gridCols = 2
+		} else {
+			gridCols = 1
+		}
+	} else if face.Dx() < 180 && n > 2 {
+		gridCols = 2
+	}
+	rows := (n + gridCols - 1) / gridCols
+	cellW := (face.Dx() - 2*padX - (gridCols-1)*gap) / gridCols
+	cellH := (by1 - by0 - (rows-1)*gap) / rows
+	if cellH < 24 {
+		cellH = 24
+	}
+
 	for i, opt := range wd.Options {
-		x0 := face.Min.X + padX + i*(optW+gap)
-		optR := image.Rect(x0, by0, x0+optW, by1)
+		rIdx := i / gridCols
+		cIdx := i % gridCols
+		x0 := face.Min.X + padX + cIdx*(cellW+gap)
+		y0 := by0 + rIdx*(cellH+gap)
+		y1 := y0 + cellH
+		if y1 > by1 {
+			y1 = by1
+		}
+		optR := image.Rect(x0, y0, x0+cellW, y1)
 		active := curVal != "" && strings.EqualFold(curVal, opt.Payload)
 		lbl := opt.Label
 		if active {
 			lbl = "● " + lbl
 		}
-		drawRoundedButton(r.canvas, optR, 8, r.fonts.bold16, truncateText(r.fonts.bold16, lbl, optW-10), active)
+		optFont := r.fonts.bold16
+		if cellW < 76 || cellH < 30 {
+			optFont = r.fonts.small
+		}
+		drawRoundedButton(r.canvas, optR, 8, optFont, truncateText(optFont, lbl, maxInt(16, cellW-8)), active)
 		r.hits = append(r.hits, HitAction{
 			Rect:    optR,
 			Type:    ActionWidgetSelect,
@@ -1512,6 +1722,7 @@ func (r *Renderer) dispatchActionLocked(matched HitAction, now time.Time) bool {
 		r.detailWidget = nil
 		r.weatherDetailOpen = false
 		r.calendarDetailOpen = false
+		r.spotDetailOpen = false
 		r.mu.Unlock()
 		return true
 
@@ -1538,6 +1749,7 @@ func (r *Renderer) dispatchActionLocked(matched HitAction, now time.Time) bool {
 		r.detailWidget = nil
 		r.weatherDetailOpen = false
 		r.calendarDetailOpen = false
+		r.spotDetailOpen = false
 		r.mu.Unlock()
 		if r.ctrl.OnFullRefresh != nil {
 			r.ctrl.OnFullRefresh()
@@ -1557,6 +1769,7 @@ func (r *Renderer) dispatchActionLocked(matched HitAction, now time.Time) bool {
 		r.detailWidget = &wdCopy
 		r.weatherDetailOpen = false
 		r.calendarDetailOpen = false
+		r.spotDetailOpen = false
 		r.showSettings = false
 		r.mu.Unlock()
 		return true
@@ -1564,6 +1777,7 @@ func (r *Renderer) dispatchActionLocked(matched HitAction, now time.Time) bool {
 	case ActionOpenWeatherDetail:
 		r.weatherDetailOpen = true
 		r.calendarDetailOpen = false
+		r.spotDetailOpen = false
 		r.detailWidget = nil
 		r.showSettings = false
 		r.mu.Unlock()
@@ -1572,6 +1786,16 @@ func (r *Renderer) dispatchActionLocked(matched HitAction, now time.Time) bool {
 	case ActionOpenCalendarDetail:
 		r.calendarDetailOpen = true
 		r.weatherDetailOpen = false
+		r.spotDetailOpen = false
+		r.detailWidget = nil
+		r.showSettings = false
+		r.mu.Unlock()
+		return true
+
+	case ActionOpenSpotDetail:
+		r.spotDetailOpen = true
+		r.weatherDetailOpen = false
+		r.calendarDetailOpen = false
 		r.detailWidget = nil
 		r.showSettings = false
 		r.mu.Unlock()
@@ -1581,7 +1805,39 @@ func (r *Renderer) dispatchActionLocked(matched HitAction, now time.Time) bool {
 		r.detailWidget = nil
 		r.weatherDetailOpen = false
 		r.calendarDetailOpen = false
+		r.spotDetailOpen = false
 		r.mu.Unlock()
+		return true
+
+	case ActionChecklistToggle:
+		cs := r.checkStore
+		wID := matched.Widget.ID
+		itemID := matched.Payload
+		r.mu.Unlock()
+		if cs != nil {
+			cs.Toggle(wID, itemID)
+		}
+		return true
+
+	case ActionChecklistClearDone:
+		cs := r.checkStore
+		wID := matched.Widget.ID
+		r.mu.Unlock()
+		if cs != nil {
+			cs.ClearDone(wID)
+		}
+		return true
+
+	case ActionImageRefresh:
+		is := r.imgSvc
+		wID := matched.Widget.ID
+		msg := r.tr().ImageRefreshing
+		r.noticeText = msg
+		r.noticeUntil = time.Now().Add(3 * time.Second)
+		r.mu.Unlock()
+		if is != nil {
+			is.TriggerFetch(wID)
+		}
 		return true
 
 	case ActionToggleTheme:
@@ -1727,6 +1983,9 @@ func (r *Renderer) dispatchActionLocked(matched HitAction, now time.Time) bool {
 		if strings.TrimSpace(wd.CommandTopic) != "" {
 			_ = r.publishWithFeedback(wd.BrokerID, wd.CommandTopic, wd.QoS, wd.Retain, wd.Payload)
 		}
+		if strings.TrimSpace(wd.WebhookURL) != "" {
+			r.fireWebhookAsync(wd.WebhookMethod, wd.WebhookURL, wd.WebhookBody, wd.WebhookHeaders, "PRESS")
+		}
 		return true
 
 	case ActionWidgetStep:
@@ -1756,6 +2015,7 @@ func (r *Renderer) executeSwitchToggle(wd config.WidgetConfig) {
 		val := mqtt.ExtractValue(tv.Payload, wd.StateJSONPath)
 		isOn = strings.EqualFold(val, wd.ValueOn)
 	}
+	turnOn := !isOn
 	payload := wd.PayloadOn
 	nextState := wd.ValueOn
 	if isOn {
@@ -1763,10 +2023,11 @@ func (r *Renderer) executeSwitchToggle(wd config.WidgetConfig) {
 		nextState = wd.ValueOff
 	}
 	if strings.TrimSpace(wd.CommandTopic) == "" {
-		// Local-only / Apple Home switch without MQTT command topic
+		// Local-only / Apple Home / Webhook switch without MQTT command topic
 		if wd.StateTopic != "" {
 			r.mq.SetLocalValue(wd.BrokerID, wd.StateTopic, nextState)
 		}
+		r.fireSwitchWebhook(wd, turnOn)
 		if r.ctrl.OnWidgetChanged != nil {
 			r.ctrl.OnWidgetChanged()
 		}
@@ -1782,10 +2043,42 @@ func (r *Renderer) executeSwitchToggle(wd config.WidgetConfig) {
 		if !(wd.Optimistic || wd.HomeKit) && wd.StateTopic != "" && wd.StateJSONPath == "" {
 			r.mq.SetLocalValue(wd.BrokerID, wd.StateTopic, nextState)
 		}
+		r.fireSwitchWebhook(wd, turnOn)
 		if r.ctrl.OnWidgetChanged != nil {
 			r.ctrl.OnWidgetChanged()
 		}
 	}
+}
+
+func (r *Renderer) fireSwitchWebhook(wd config.WidgetConfig, turnOn bool) {
+	urlStr := strings.TrimSpace(wd.WebhookURL)
+	body := wd.WebhookBody
+	stateStr := "ON"
+	if !turnOn {
+		stateStr = "OFF"
+		if strings.TrimSpace(wd.WebhookOffURL) != "" {
+			urlStr = strings.TrimSpace(wd.WebhookOffURL)
+			body = wd.WebhookOffBody
+		}
+	}
+	if urlStr != "" {
+		r.fireWebhookAsync(wd.WebhookMethod, urlStr, body, wd.WebhookHeaders, stateStr)
+	}
+}
+
+func (r *Renderer) fireWebhookAsync(method, rawURL, body string, headers map[string]string, state string) {
+	client := r.httpClient
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		if err := httppoll.FireWebhook(ctx, client, method, rawURL, body, headers, state); err != nil {
+			r.mu.Lock()
+			tr := stringsForLang(config.NormalizeLanguage(r.cfg.Device.Language))
+			r.lastError = tr.WebhookErrPrefix + err.Error()
+			r.lastErrUntil = time.Now().Add(4 * time.Second)
+			r.mu.Unlock()
+		}
+	}()
 }
 
 func (r *Renderer) executeStepper(wd config.WidgetConfig, delta float64) {
@@ -2144,6 +2437,7 @@ func (r *Renderer) executeWidgetAction(widgetID, state, brokerID, topic, payload
 				if strings.TrimSpace(target.CommandTopic) != "" {
 					_ = r.mq.Publish(target.BrokerID, target.CommandTopic, target.QoS, target.Retain, cmdPayload)
 				}
+				r.fireSwitchWebhook(target, turnOn)
 			}
 		}
 	}
@@ -2427,16 +2721,13 @@ func (r *Renderer) drawCalendarCard(rect image.Rectangle, wd config.WidgetConfig
 		return
 	}
 
-	maxShow := 3
+	maxShow := clampInt((face.Dy()-46)/30, 2, 12)
 	if len(evs) < maxShow {
 		maxShow = len(evs)
 	}
 	rowTop := face.Min.Y + 42
-	rowH := (face.Max.Y - rowTop - 8) / 3
-	if rowH < 24 {
-		rowH = 24
-	}
-	whenColW := 128
+	rowH := clampInt((face.Max.Y-rowTop-8)/maxShow, 22, 44)
+	whenColW := minInt(128, maxInt(64, face.Dx()*38/100))
 	for i := 0; i < maxShow; i++ {
 		ry := rowTop + i*rowH
 		if i > 0 {
@@ -2446,7 +2737,7 @@ func (r *Renderer) drawCalendarCard(rect image.Rectangle, wd config.WidgetConfig
 		drawText(r.canvas, r.fonts.small, face.Min.X+12, ry+17, colDark,
 			truncateText(r.fonts.small, when, whenColW))
 		drawText(r.canvas, r.fonts.bold16, face.Min.X+12+whenColW+8, ry+18, colBlack,
-			truncateText(r.fonts.bold16, localizedEventSummary(evs[i], tr), face.Dx()-30-whenColW))
+			truncateText(r.fonts.bold16, localizedEventSummary(evs[i], tr), maxInt(20, face.Dx()-30-whenColW)))
 	}
 }
 
@@ -2494,25 +2785,67 @@ func (r *Renderer) drawWeatherCard(rect image.Rectangle, wd config.WidgetConfig,
 
 	desc, _ := weather.DescribeWMOLang(ws.WeatherCode, lang)
 	tempStr := fmt.Sprintf("%.1f °C", ws.Temperature)
-	drawText(r.canvas, r.fonts.bold28, face.Min.X+14, face.Min.Y+72, colBlack, tempStr)
-	drawText(r.canvas, r.fonts.bold16, face.Min.X+138, face.Min.Y+64, colBlack,
-		truncateText(r.fonts.bold16, desc, face.Dx()-150))
-	drawText(r.canvas, r.fonts.small, face.Min.X+138, face.Min.Y+81, colDark,
-		fmt.Sprintf(tr.WindFmt, ws.WindSpeed))
+	if face.Dx() < 230 {
+		drawText(r.canvas, r.fonts.bold20, face.Min.X+12, face.Min.Y+58, colBlack, tempStr)
+		drawText(r.canvas, r.fonts.small, face.Min.X+12, face.Min.Y+74, colBlack,
+			truncateText(r.fonts.small, desc, face.Dx()-24))
+		drawText(r.canvas, r.fonts.small, face.Min.X+12, face.Min.Y+88, colDark,
+			truncateText(r.fonts.small, fmt.Sprintf(tr.WindFmt, ws.WindSpeed), face.Dx()-24))
+	} else {
+		drawText(r.canvas, r.fonts.bold28, face.Min.X+14, face.Min.Y+72, colBlack, tempStr)
+		drawText(r.canvas, r.fonts.bold16, face.Min.X+138, face.Min.Y+64, colBlack,
+			truncateText(r.fonts.bold16, desc, face.Dx()-150))
+		drawText(r.canvas, r.fonts.small, face.Min.X+138, face.Min.Y+81, colDark,
+			fmt.Sprintf(tr.WindFmt, ws.WindSpeed))
+	}
 
-	// 3-day mini forecast strip at bottom
+	if face.Dy() >= 210 && len(ws.Hourly) >= 2 {
+		limit := minInt(len(ws.Hourly), 12)
+		vals := make([]float64, limit)
+		minV, maxV := ws.Hourly[0].Temperature, ws.Hourly[0].Temperature
+		for i := 0; i < limit; i++ {
+			v := ws.Hourly[i].Temperature
+			vals[i] = v
+			if v < minV {
+				minV = v
+			}
+			if v > maxV {
+				maxV = v
+			}
+		}
+		plotTop := face.Min.Y + 96
+		plotBot := face.Max.Y - 40
+		plot := image.Rect(face.Min.X+12, plotTop, face.Max.X-12, plotBot)
+		if plot.Dy() >= 36 && plot.Dx() >= 60 {
+			r.drawDitheredPlot(plot, vals, minV, maxV, 4, 2)
+		}
+	}
+
+	// Daily forecast strip at bottom (3 days standard, up to 5 days on wide cards)
 	drawDashedHLine(r.canvas, face.Min.X+12, face.Max.X-12, face.Max.Y-34, 3, 3, colSubtleGray)
 	dayLabels := [...]string{tr.Today, tr.Tomorrow, tr.DayAfterTomorrow}
+	maxDays := 3
+	if face.Dx() >= 340 {
+		maxDays = 5
+	} else if face.Dx() < 185 {
+		maxDays = 2
+	}
 	nDays := len(ws.Daily)
-	if nDays > 3 {
-		nDays = 3
+	if nDays > maxDays {
+		nDays = maxDays
 	}
 	if nDays > 0 {
 		colW := (face.Dx() - 24) / nDays
 		for i := 0; i < nDays; i++ {
 			df := ws.Daily[i]
 			cell := image.Rect(face.Min.X+12+i*colW, face.Max.Y-30, face.Min.X+12+(i+1)*colW, face.Max.Y-6)
-			txt := fmt.Sprintf("%s %.0f°/%.0f°", dayLabels[i], df.TempMin, df.TempMax)
+			lbl := df.Date
+			if i < len(dayLabels) {
+				lbl = dayLabels[i]
+			} else if len(lbl) >= 10 {
+				lbl = lbl[5:]
+			}
+			txt := fmt.Sprintf("%s %.0f°/%.0f°", lbl, df.TempMin, df.TempMax)
 			drawCenteredText(r.canvas, r.fonts.small, cell, colBlack, truncateText(r.fonts.small, txt, colW-4))
 		}
 	}
@@ -3222,4 +3555,501 @@ func (r *Renderer) drawStandbyScreen(w, h int, now time.Time, snap mqtt.ManagerS
 		Rect: image.Rect(0, 0, w, h),
 		Type: ActionWakeStandby,
 	})
+}
+
+
+func (r *Renderer) drawChecklistCard(rect image.Rectangle, wd config.WidgetConfig) {
+	tr := r.tr()
+	face := drawCardFrame(r.canvas, rect, 10, false)
+
+	hdr := image.Rect(face.Min.X+3, face.Min.Y+3, face.Max.X-3, face.Min.Y+35)
+	fillRoundedRect(r.canvas, hdr, 7, colLight)
+	fillRect(r.canvas, image.Rect(hdr.Min.X, hdr.Max.Y-1, hdr.Max.X, hdr.Max.Y+1), colBlack)
+
+	drawIconBadge(r.canvas, hdr.Min.X+18, hdr.Min.Y+16, 12, resolveWidgetIcon(wd), false)
+	title := wd.Label
+	if title == "" {
+		title = "Checklist"
+	}
+
+	var items []config.ChecklistItem
+	if r.checkStore != nil {
+		items = r.checkStore.Items(wd.ID)
+	} else {
+		items = wd.ChecklistItems
+	}
+	doneCount := 0
+	for _, it := range items {
+		if it.Done {
+			doneCount++
+		}
+	}
+
+	rightReserve := 48
+	if doneCount > 0 {
+		clearLbl := tr.ChecklistClearDone
+		if hdr.Dx() < 210 {
+			clearLbl = fmt.Sprintf("✕ %d", doneCount)
+		}
+		clearW := minInt(98, maxInt(44, font.MeasureString(r.fonts.small, clearLbl).Ceil()+14))
+		rightReserve = clearW + 12
+		clearR := image.Rect(hdr.Max.X-clearW-4, hdr.Min.Y+4, hdr.Max.X-4, hdr.Max.Y-4)
+		fillRoundedRect(r.canvas, clearR, 5, colWhite)
+		drawRoundedRect(r.canvas, clearR, 5, 1, colBlack)
+		drawCenteredText(r.canvas, r.fonts.small, clearR, colBlack, clearLbl)
+		r.hits = append(r.hits, HitAction{
+			Rect:   clearR,
+			Type:   ActionChecklistClearDone,
+			Widget: wd,
+		})
+	} else {
+		drawRightText(r.canvas, r.fonts.small, hdr.Max.X-8, hdr.Min.Y+21, colDark, fmt.Sprintf("%d/%d", len(items)-doneCount, len(items)))
+	}
+
+	drawText(r.canvas, r.fonts.bold16, hdr.Min.X+36, hdr.Min.Y+22, colBlack,
+		truncateText(r.fonts.bold16, title, maxInt(20, hdr.Dx()-42-rightReserve)))
+
+	if len(items) == 0 {
+		drawCenteredText(r.canvas, r.fonts.regular,
+			image.Rect(face.Min.X+10, hdr.Max.Y+6, face.Max.X-10, face.Max.Y-8),
+			colDark, tr.ChecklistEmpty)
+		return
+	}
+
+	rowTop := hdr.Max.Y + 6
+	availH := face.Max.Y - rowTop - 8
+	maxShow := clampInt(availH/28, 2, 14)
+	extra := 0
+	if len(items) > maxShow {
+		if maxShow >= 3 {
+			maxShow--
+		}
+		extra = len(items) - maxShow
+		availH -= 18
+	}
+	if len(items) < maxShow {
+		maxShow = len(items)
+	}
+	rowH := clampInt(availH/maxInt(1, maxShow), 24, 42)
+	textFont := r.fonts.regular
+	if face.Dx() < 200 {
+		textFont = r.fonts.small
+	}
+
+	for i := 0; i < maxShow; i++ {
+		it := items[i]
+		ry := rowTop + i*rowH
+		rowR := image.Rect(face.Min.X+6, ry, face.Max.X-6, ry+rowH)
+		if i > 0 {
+			drawDashedHLine(r.canvas, face.Min.X+10, face.Max.X-10, ry, 3, 3, colSubtleGray)
+		}
+
+		boxSize := 16
+		cy := ry + rowH/2
+		bx0 := face.Min.X + 12
+		by0 := cy - boxSize/2
+		cbRect := image.Rect(bx0, by0, bx0+boxSize, by0+boxSize)
+		if it.Done {
+			fillRoundedRect(r.canvas, cbRect, 3, colBlack)
+			drawThickLine(r.canvas, bx0+3, cy, bx0+7, by0+boxSize-4, 2, colWhite)
+			drawThickLine(r.canvas, bx0+7, by0+boxSize-4, bx0+boxSize-3, by0+4, 2, colWhite)
+		} else {
+			fillRoundedRect(r.canvas, cbRect, 3, colWhite)
+			drawRoundedRect(r.canvas, cbRect, 3, 2, colBlack)
+		}
+
+		tx := cbRect.Max.X + 9
+		maxTW := maxInt(20, face.Max.X-12-tx)
+		txtCol := colBlack
+		if it.Done {
+			txtCol = colDark
+		}
+		dispTxt := truncateText(textFont, it.Text, maxTW)
+		drawText(r.canvas, textFont, tx, cy+5, txtCol, dispTxt)
+		if it.Done {
+			tw := font.MeasureString(textFont, dispTxt).Ceil()
+			drawThickLine(r.canvas, tx, cy+1, tx+tw, cy+1, 1, colDark)
+		}
+
+		r.hits = append(r.hits, HitAction{
+			Rect:    rowR,
+			Type:    ActionChecklistToggle,
+			Widget:  wd,
+			Payload: it.ID,
+		})
+	}
+
+	if extra > 0 {
+		drawRightText(r.canvas, r.fonts.small, face.Max.X-10, face.Max.Y-8, colDark,
+			fmt.Sprintf(tr.ChecklistMoreFmt, extra))
+	}
+}
+
+func formatSpotValue(v float64, cur string) string {
+	if strings.EqualFold(cur, "EUR") {
+		return fmt.Sprintf("%.0f", v)
+	}
+	return fmt.Sprintf("%.2f", v)
+}
+
+func spotLevelText(level string, tr uiStrings) string {
+	switch strings.ToLower(level) {
+	case "low":
+		return tr.SpotLevelLow
+	case "high":
+		return tr.SpotLevelHigh
+	default:
+		return tr.SpotLevelMed
+	}
+}
+
+func (r *Renderer) drawSpotBars(plot image.Rectangle, hours []spot.HourPrice, cur string, avgVal float64, activeHour int, showAxisLabels bool) {
+	if len(hours) == 0 || plot.Dx() < 48 || plot.Dy() < 24 {
+		return
+	}
+	fillRoundedRect(r.canvas, plot, 6, colBgCanvas)
+	drawRoundedRect(r.canvas, plot, 6, 1, colMidGray)
+
+	chartTop := plot.Min.Y + 6
+	chartBot := plot.Max.Y - 4
+	if showAxisLabels {
+		chartBot -= 16
+	}
+	chartH := chartBot - chartTop
+	if chartH < 12 {
+		return
+	}
+
+	minV, maxV := 0.0, hours[0].DisplayValue(cur)
+	for _, h := range hours {
+		v := h.DisplayValue(cur)
+		if v < minV {
+			minV = v
+		}
+		if v > maxV {
+			maxV = v
+		}
+	}
+	span := maxV - minV
+	if span < 0.01 {
+		span = 1
+	}
+
+	n := len(hours)
+	innerL := plot.Min.X + 6
+	innerW := plot.Dx() - 12
+	slotW := float64(innerW) / float64(n)
+	barW := maxInt(2, int(slotW)-2)
+	if barW > 22 {
+		barW = 22
+	}
+
+	// Dashed average reference line
+	avgFrac := (avgVal - minV) / span
+	if avgFrac >= 0 && avgFrac <= 1 {
+		avgY := chartBot - int(math.Round(avgFrac*float64(chartH-4)))
+		drawDashedHLine(r.canvas, innerL, plot.Max.X-6, avgY, 4, 3, colDark)
+	}
+
+	for i, h := range hours {
+		v := h.DisplayValue(cur)
+		frac := (v - minV) / span
+		if frac < 0.05 {
+			frac = 0.05
+		}
+		bh := maxInt(4, int(math.Round(frac*float64(chartH-4))))
+		bx0 := innerL + int(math.Round(float64(i)*slotW))
+		bx1 := minInt(plot.Max.X-6, bx0+barW)
+		if bx1 <= bx0 {
+			bx1 = bx0 + 1
+		}
+		by0 := chartBot - bh
+		barR := image.Rect(bx0, by0, bx1, chartBot)
+
+		isNow := activeHour >= 0 && h.Hour == activeHour
+		if isNow {
+			fillRect(r.canvas, barR, colBlack)
+			// Small triangle/dot indicator at top
+			if by0 >= chartTop+4 {
+				fillRect(r.canvas, image.Rect(bx0, by0-4, bx1, by0-1), colBlack)
+			}
+		} else {
+			switch strings.ToLower(h.Level) {
+			case "high":
+				fillRect(r.canvas, barR, colDark)
+				drawRect(r.canvas, barR, 1, colBlack)
+			case "low":
+				fillRect(r.canvas, barR, colWhite)
+				drawRect(r.canvas, barR, 1, colBlack)
+			default:
+				fillDitheredRect(r.canvas, barR, 2, colBlack, colWhite)
+				drawRect(r.canvas, barR, 1, colDark)
+			}
+		}
+	}
+
+	if showAxisLabels {
+		lblY := plot.Max.Y - 4
+		marks := []int{0, 6, 12, 18, 23}
+		for _, hr := range marks {
+			pos := -1
+			for i, h := range hours {
+				if h.Hour == hr {
+					pos = i
+					break
+				}
+			}
+			if pos < 0 {
+				continue
+			}
+			x := innerL + int(math.Round(float64(pos)*slotW))
+			if hr == 23 {
+				drawRightText(r.canvas, r.fonts.small, plot.Max.X-6, lblY, colDark, "23h")
+			} else {
+				drawText(r.canvas, r.fonts.small, x, lblY, colDark, fmt.Sprintf("%dh", hr))
+			}
+		}
+	}
+}
+
+func (r *Renderer) drawSpotPriceCard(rect image.Rectangle, wd config.WidgetConfig, now time.Time) {
+	tr := r.tr()
+	face := drawCardFrame(r.canvas, rect, 10, false)
+	r.hits = append(r.hits, HitAction{Rect: rect, Type: ActionOpenSpotDetail, Widget: wd})
+
+	hdr := image.Rect(face.Min.X+3, face.Min.Y+3, face.Max.X-3, face.Min.Y+35)
+	fillRoundedRect(r.canvas, hdr, 7, colLight)
+	fillRect(r.canvas, image.Rect(hdr.Min.X, hdr.Max.Y-1, hdr.Max.X, hdr.Max.Y+1), colBlack)
+
+	drawIconBadge(r.canvas, hdr.Min.X+18, hdr.Min.Y+16, 12, "bolt", false)
+	title := wd.Label
+	if title == "" {
+		title = tr.SpotTitle
+	}
+
+	var snap spot.Snapshot
+	if r.spotSvc != nil {
+		snap = r.spotSvc.SnapshotAt(now)
+	}
+
+	if !snap.Enabled && !snap.Available {
+		drawText(r.canvas, r.fonts.bold16, hdr.Min.X+36, hdr.Min.Y+22, colBlack,
+			truncateText(r.fonts.bold16, title, hdr.Dx()-44))
+		drawCenteredText(r.canvas, r.fonts.regular,
+			image.Rect(face.Min.X+10, hdr.Max.Y+6, face.Max.X-10, face.Max.Y-8),
+			colDark, tr.SpotEnableHint)
+		return
+	}
+
+	if !snap.Available || snap.Current == nil {
+		drawText(r.canvas, r.fonts.bold16, hdr.Min.X+36, hdr.Min.Y+22, colBlack,
+			truncateText(r.fonts.bold16, title, hdr.Dx()-44))
+		msg := tr.SpotLoading
+		if snap.LastError != "" {
+			msg = snap.LastError
+		}
+		drawCenteredText(r.canvas, r.fonts.regular,
+			image.Rect(face.Min.X+10, hdr.Max.Y+6, face.Max.X-10, face.Max.Y-8),
+			colDark, msg)
+		return
+	}
+
+	lvlText := spotLevelText(snap.Current.Level, tr)
+	badgeW := minInt(96, maxInt(56, font.MeasureString(r.fonts.small, lvlText).Ceil()+16))
+	badgeR := image.Rect(hdr.Max.X-badgeW-4, hdr.Min.Y+4, hdr.Max.X-4, hdr.Max.Y-4)
+	isHigh := strings.EqualFold(snap.Current.Level, "high")
+	fillRoundedRect(r.canvas, badgeR, 5, map[bool]color.Gray{true: colBlack, false: colWhite}[isHigh])
+	drawRoundedRect(r.canvas, badgeR, 5, 1, colBlack)
+	drawCenteredText(r.canvas, r.fonts.small, badgeR, map[bool]color.Gray{true: colWhite, false: colBlack}[isHigh], lvlText)
+
+	drawText(r.canvas, r.fonts.bold16, hdr.Min.X+36, hdr.Min.Y+22, colBlack,
+		truncateText(r.fonts.bold16, title, maxInt(20, hdr.Dx()-46-badgeW)))
+
+	curVal := snap.Current.DisplayValue(snap.Currency)
+	heroTxt := formatSpotValue(curVal, snap.Currency) + " " + snap.Unit
+	heroFont := r.fonts.bold28
+	if face.Dx() < 220 {
+		heroFont = r.fonts.bold20
+	}
+
+	bodyH := face.Max.Y - hdr.Max.Y
+	if bodyH < 105 {
+		// Compact tile
+		drawCenteredText(r.canvas, heroFont,
+			image.Rect(face.Min.X+8, hdr.Max.Y+4, face.Max.X-8, face.Max.Y-26),
+			colBlack, heroTxt)
+		rangeTxt := fmt.Sprintf("▼%s (%02dh)  ▲%s",
+			formatSpotValue(snap.MinToday, snap.Currency), snap.CheapestHour,
+			formatSpotValue(snap.MaxToday, snap.Currency))
+		drawCenteredText(r.canvas, r.fonts.small,
+			image.Rect(face.Min.X+6, face.Max.Y-24, face.Max.X-6, face.Max.Y-4),
+			colDark, truncateText(r.fonts.small, rangeTxt, face.Dx()-12))
+		return
+	}
+
+	drawText(r.canvas, heroFont, face.Min.X+12, hdr.Max.Y+34, colBlack, heroTxt)
+	if face.Dx() >= 250 {
+		bestStr := fmt.Sprintf(tr.SpotCheapestFmt, snap.CheapestHour, formatSpotValue(snap.MinToday, snap.Currency), snap.CheapestWindowStart)
+		drawRightText(r.canvas, r.fonts.small, face.Max.X-12, hdr.Max.Y+22, colDark,
+			truncateText(r.fonts.small, bestStr, face.Dx()/2-10))
+		drawRightText(r.canvas, r.fonts.small, face.Max.X-12, hdr.Max.Y+38, colDark,
+			fmt.Sprintf(tr.SpotAvgFmt, formatSpotValue(snap.AvgToday, snap.Currency)+" "+snap.Unit))
+	} else {
+		drawText(r.canvas, r.fonts.small, face.Min.X+12, hdr.Max.Y+52, colDark,
+			fmt.Sprintf("▼ %s (%02dh)  ▲ %s", formatSpotValue(snap.MinToday, snap.Currency), snap.CheapestHour, formatSpotValue(snap.MaxToday, snap.Currency)))
+	}
+
+	plotTop := hdr.Max.Y + 46
+	if face.Dx() < 250 {
+		plotTop = hdr.Max.Y + 58
+	}
+	plot := image.Rect(face.Min.X+10, plotTop, face.Max.X-10, face.Max.Y-10)
+	r.drawSpotBars(plot, snap.Today, snap.Currency, snap.AvgToday, now.Hour(), plot.Dy() >= 70 && face.Dx() >= 210)
+}
+
+func (r *Renderer) drawSpotPriceDetailModal(w, top, bottom int, now time.Time) {
+	tr := r.tr()
+	outer := image.Rect(14, top, w-14, bottom)
+	face := drawCardFrame(r.canvas, outer, 12, false)
+
+	hdr := image.Rect(face.Min.X+4, face.Min.Y+4, face.Max.X-4, face.Min.Y+52)
+	fillRoundedRect(r.canvas, hdr, 8, colLight)
+	fillRect(r.canvas, image.Rect(hdr.Min.X, hdr.Max.Y-2, hdr.Max.X, hdr.Max.Y), colBlack)
+
+	drawIconBadge(r.canvas, hdr.Min.X+24, hdr.Min.Y+24, 15, "bolt", false)
+	drawText(r.canvas, r.fonts.bold20, hdr.Min.X+48, hdr.Min.Y+31, colBlack,
+		truncateText(r.fonts.bold20, tr.SpotModalTitle, hdr.Dx()-164))
+
+	closeBtn := image.Rect(hdr.Max.X-108, hdr.Min.Y+6, hdr.Max.X-8, hdr.Max.Y-6)
+	drawRoundedButton(r.canvas, closeBtn, 7, r.fonts.bold16, tr.CloseBtn, true)
+	r.hits = append(r.hits, HitAction{Rect: closeBtn, Type: ActionCloseDetail})
+
+	var snap spot.Snapshot
+	if r.spotSvc != nil {
+		snap = r.spotSvc.SnapshotAt(now)
+	}
+	if !snap.Available || snap.Current == nil {
+		msg := tr.SpotLoading
+		if !snap.Enabled {
+			msg = tr.SpotEnableHint
+		}
+		drawCenteredText(r.canvas, r.fonts.regular,
+			image.Rect(face.Min.X+16, hdr.Max.Y+20, face.Max.X-16, face.Max.Y-20),
+			colDark, msg)
+		return
+	}
+
+	// Summary stats row
+	heroY := hdr.Max.Y + 36
+	curVal := snap.Current.DisplayValue(snap.Currency)
+	drawText(r.canvas, r.fonts.bold28, face.Min.X+16, heroY, colBlack,
+		fmt.Sprintf("%s %s", formatSpotValue(curVal, snap.Currency), snap.Unit))
+	drawText(r.canvas, r.fonts.bold16, face.Min.X+185, heroY-10, colBlack,
+		fmt.Sprintf("%02d:00–%02d:00 • %s", snap.Current.Hour, (snap.Current.Hour+1)%24, spotLevelText(snap.Current.Level, tr)))
+	drawText(r.canvas, r.fonts.small, face.Min.X+185, heroY+8, colDark,
+		fmt.Sprintf(tr.SpotCheapestFmt, snap.CheapestHour, formatSpotValue(snap.MinToday, snap.Currency), snap.CheapestWindowStart))
+
+	// Today & Tomorrow charts stacked cleanly
+	bodyTop := hdr.Max.Y + 58
+	statBoxH := 48
+	boxW := (face.Dx() - 48) / 3
+	stats := []struct{ lbl, val string }{
+		{tr.StatMin + fmt.Sprintf(" (%02dh)", snap.CheapestHour), formatSpotValue(snap.MinToday, snap.Currency) + " " + snap.Unit},
+		{tr.StatAvg, formatSpotValue(snap.AvgToday, snap.Currency) + " " + snap.Unit},
+		{tr.StatMax, formatSpotValue(snap.MaxToday, snap.Currency) + " " + snap.Unit},
+	}
+	for i, st := range stats {
+		bx := face.Min.X + 16 + i*(boxW+8)
+		sb := image.Rect(bx, bodyTop, bx+boxW, bodyTop+statBoxH)
+		fillRoundedRect(r.canvas, sb, 6, colBgCanvas)
+		drawRoundedRect(r.canvas, sb, 6, 1, colBlack)
+		drawText(r.canvas, r.fonts.small, bx+8, bodyTop+17, colDark, st.lbl)
+		drawText(r.canvas, r.fonts.bold16, bx+8, bodyTop+38, colBlack, truncateText(r.fonts.bold16, st.val, boxW-14))
+	}
+
+	chartsTop := bodyTop + statBoxH + 14
+	chartsBot := face.Max.Y - 12
+	midSplit := chartsTop + (chartsBot-chartsTop)*52/100
+
+	drawText(r.canvas, r.fonts.bold16, face.Min.X+16, chartsTop+16, colBlack, tr.SpotTodayTitle)
+	todayPlot := image.Rect(face.Min.X+16, chartsTop+24, face.Max.X-16, midSplit-8)
+	r.drawSpotBars(todayPlot, snap.Today, snap.Currency, snap.AvgToday, now.Hour(), true)
+
+	drawText(r.canvas, r.fonts.bold16, face.Min.X+16, midSplit+16, colBlack, tr.SpotTomorrowTitle)
+	tmrwPlot := image.Rect(face.Min.X+16, midSplit+24, face.Max.X-16, chartsBot)
+	if len(snap.Tomorrow) > 0 {
+		var sum float64
+		for _, h := range snap.Tomorrow {
+			sum += h.DisplayValue(snap.Currency)
+		}
+		avgTmrw := sum / float64(len(snap.Tomorrow))
+		r.drawSpotBars(tmrwPlot, snap.Tomorrow, snap.Currency, avgTmrw, -1, true)
+	} else {
+		fillRoundedRect(r.canvas, tmrwPlot, 8, colBgCanvas)
+		drawRoundedRect(r.canvas, tmrwPlot, 8, 1, colMidGray)
+		drawCenteredText(r.canvas, r.fonts.regular, tmrwPlot, colDark, tr.SpotTomorrowWait)
+	}
+}
+
+func (r *Renderer) drawImageCard(rect image.Rectangle, wd config.WidgetConfig, now time.Time) {
+	tr := r.tr()
+	face := drawCardFrame(r.canvas, rect, 10, false)
+	r.hits = append(r.hits, HitAction{Rect: rect, Type: ActionImageRefresh, Widget: wd})
+
+	hdr := image.Rect(face.Min.X+3, face.Min.Y+3, face.Max.X-3, face.Min.Y+32)
+	fillRoundedRect(r.canvas, hdr, 7, colLight)
+	fillRect(r.canvas, image.Rect(hdr.Min.X, hdr.Max.Y-1, hdr.Max.X, hdr.Max.Y+1), colBlack)
+
+	drawIconBadge(r.canvas, hdr.Min.X+16, hdr.Min.Y+14, 11, "image", false)
+	title := wd.Label
+	if title == "" {
+		title = "Image"
+	}
+
+	imgR := image.Rect(face.Min.X+5, hdr.Max.Y+5, face.Max.X-5, face.Max.Y-5)
+	if strings.TrimSpace(wd.ImageURL) == "" {
+		drawText(r.canvas, r.fonts.bold16, hdr.Min.X+32, hdr.Min.Y+20, colBlack,
+			truncateText(r.fonts.bold16, title, hdr.Dx()-40))
+		drawCenteredText(r.canvas, r.fonts.regular, imgR, colDark, tr.ImageNoURL)
+		return
+	}
+
+	if r.imgSvc == nil {
+		drawText(r.canvas, r.fonts.bold16, hdr.Min.X+32, hdr.Min.Y+20, colBlack,
+			truncateText(r.fonts.bold16, title, hdr.Dx()-40))
+		drawCenteredText(r.canvas, r.fonts.regular, imgR, colDark, tr.ImageLoading)
+		return
+	}
+
+	gray, fetchedAt, lastErr := r.imgSvc.GetRendered(wd.ID, imgR.Dx(), imgR.Dy(), wd.ImageFit, wd.EffectiveImageDither())
+	ageStr := "↻"
+	if !fetchedAt.IsZero() {
+		ageStr = formatAgeLang(now.Sub(fetchedAt), tr)
+	}
+	drawText(r.canvas, r.fonts.bold16, hdr.Min.X+32, hdr.Min.Y+20, colBlack,
+		truncateText(r.fonts.bold16, title, maxInt(20, hdr.Dx()-108)))
+	drawRightText(r.canvas, r.fonts.small, hdr.Max.X-8, hdr.Min.Y+20, colDark, ageStr)
+
+	if gray == nil {
+		msg := tr.ImageLoading
+		if lastErr != "" {
+			msg = tr.ImageErrPrefix + lastErr
+		}
+		drawCenteredText(r.canvas, r.fonts.small, imgR, colDark, truncateText(r.fonts.small, msg, maxInt(40, imgR.Dx()-16)))
+		return
+	}
+
+	invertPixels := r.isDarkModeLocked(now)
+	gb := gray.Bounds()
+	copyW := minInt(imgR.Dx(), gb.Dx())
+	copyH := minInt(imgR.Dy(), gb.Dy())
+	for y := 0; y < copyH; y++ {
+		for x := 0; x < copyW; x++ {
+			v := gray.GrayAt(gb.Min.X+x, gb.Min.Y+y).Y
+			if invertPixels {
+				v = 255 - v
+			}
+			r.canvas.SetGray(imgR.Min.X+x, imgR.Min.Y+y, color.Gray{Y: v})
+		}
+	}
 }

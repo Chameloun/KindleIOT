@@ -104,39 +104,61 @@
       min-height: 340px;
     }
     .k-grid {
-      flex: 1; padding: 10px; display: grid; gap: 8px; align-content: start;
-      min-height: 460px; transition: background 0.15s;
+      flex: 1; padding: 10px; display: grid; gap: 8px; align-content: stretch;
+      min-height: 460px; position: relative; transition: background 0.15s;
     }
-    .k-grid.cols-1 { grid-template-columns: 1fr; }
-    .k-grid.cols-2 { grid-template-columns: 1fr 1fr; }
-    .k-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .k-grid.cols-dense { padding: 8px; gap: 6px; }
     .k-grid.drag-over-empty { background: #eef6ff; outline: 2px dashed #111; outline-offset: -6px; }
+    .k-grid-cell {
+      border: 1px dashed #d5dbe2; border-radius: 6px; min-height: 76px;
+      background: #fafbfc; z-index: 1; transition: background 0.1s, border-color 0.1s;
+    }
+    .k-grid-cell.drag-over-cell {
+      background: #e8f1ff; border: 2px dashed #2563eb;
+    }
 
     .k-card {
-      border: 2px solid #111; border-radius: 8px; padding: 8px; background: #fff;
-      box-shadow: 3px 3px 0 #111;
-      min-height: 92px; display: flex; flex-direction: column; justify-content: space-between;
+      border: 2px solid #111; border-radius: 8px; padding: 7px; background: #fff;
+      box-shadow: 3px 3px 0 #111; z-index: 2; min-height: 0; overflow: hidden;
+      display: flex; flex-direction: column; justify-content: space-between;
       cursor: grab; position: relative; user-select: none;
     }
-    .k-card.span-2 { grid-column: span 2; }
-    .k-card.span-3 { grid-column: span 3; }
+    .k-grid.auto-rows .k-card { min-height: 88px; }
     .k-card.selected { outline: 3px solid #2563eb; outline-offset: 2px; background: #f8fbff; }
     .k-card.drop-before { box-shadow: inset 0 4px 0 #2563eb, 3px 3px 0 #111; }
-    .k-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
-    .k-card-title { font-weight: 700; font-size: 13px; line-height: 1.2; }
+    .k-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; }
+    .k-card-title { font-weight: 700; font-size: 12.5px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; }
+    .k-card-badges { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+    .k-card-size {
+      font-size: 10px; padding: 1px 5px; border-radius: 4px;
+      background: #e8eef6; color: #1d4ed8; font-weight: 700; border: 1px solid #bfdbfe;
+    }
     .k-card-type {
-      font-size: 10px; text-transform: uppercase; background: #eee; padding: 2px 6px;
+      font-size: 9.5px; text-transform: uppercase; background: #eee; padding: 2px 5px;
       border-radius: 999px; font-weight: 700; flex-shrink: 0; border: 1px solid #ccc;
     }
-    .k-card-sub { font-size: 11px; color: #555; margin-top: 2px; word-break: break-all; }
+    .k-card-sub { font-size: 10.5px; color: #555; margin-top: 2px; word-break: break-all; }
     .k-card-mock {
-      margin-top: 6px; padding: 4px 8px; border: 1.5px solid #111; background: #f3f3f3;
-      font-size: 11px; text-align: center; font-weight: 700; border-radius: 6px;
+      margin-top: 5px; padding: 3px 6px; border: 1.5px solid #111; background: #f3f3f3;
+      font-size: 10.5px; text-align: center; font-weight: 700; border-radius: 6px;
     }
     .k-card-actions {
-      display: flex; gap: 4px; margin-top: 6px; justify-content: flex-end; opacity: 0.85;
+      display: flex; gap: 4px; margin-top: 5px; justify-content: flex-end; opacity: 0.9; padding-right: 22px;
     }
     .k-card-actions button { padding: 2px 6px; font-size: 11px; }
+    .k-resize-handle {
+      position: absolute; right: 2px; bottom: 2px; width: 20px; height: 20px;
+      cursor: nwse-resize; display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: #555; border-radius: 4px; touch-action: none;
+    }
+    .k-resize-handle:hover { background: #dbeafe; color: #1d4ed8; }
+    .k-resize-ghost {
+      background: rgba(37, 99, 235, 0.16); border: 2.5px dashed #2563eb; border-radius: 8px;
+      z-index: 10; pointer-events: none; display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 18px; color: #1d4ed8;
+    }
+    .preset-pills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+    .preset-pills button { padding: 3px 8px; font-size: 11.5px; font-weight: 700; }
 
     /* Floorplan SVG canvas */
     .fp-wrap {
@@ -258,6 +280,10 @@
               <div><strong data-i18n="pal.hk_light.t">💡 Light (Apple Home)</strong><span data-i18n="pal.hk_light.s">Direct light in Apple Home app</span></div>
               <span>+</span>
             </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'ble_presence')" onclick="addWidgetFromPalette('ble_presence')">
+              <div><strong data-i18n="pal.ble_presence.t">📶 BLE Presence</strong><span data-i18n="pal.ble_presence.s">Apple Watch / phone + RSSI</span></div>
+              <span>+</span>
+            </div>
             <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'switch')" onclick="addWidgetFromPalette('switch')">
               <div><strong data-i18n="pal.switch.t">Switch (MQTT + Home)</strong><span data-i18n="pal.switch.s">Light, plug (ON / OFF)</span></div>
               <span>+</span>
@@ -298,6 +324,26 @@
               <div><strong data-i18n="pal.select.t">Mode Selector</strong><span data-i18n="pal.select.s">Preset option buttons</span></div>
               <span>+</span>
             </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'checklist')" onclick="addWidgetFromPalette('checklist')">
+              <div><strong data-i18n="pal.checklist.t">✅ Checklist / Notes</strong><span data-i18n="pal.checklist.s">Interactive to-do list on Kindle</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'spot_price')" onclick="addWidgetFromPalette('spot_price')">
+              <div><strong data-i18n="pal.spot_price.t">⚡ Spot Prices (OTE)</strong><span data-i18n="pal.spot_price.s">Czech CZK/kWh + 24h bar chart</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'image')" onclick="addWidgetFromPalette('image')">
+              <div><strong data-i18n="pal.image.t">🖼️ Image / Radar / Cam</strong><span data-i18n="pal.image.s">HTTP snapshot or ČHMÚ weather radar</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'http_sensor')" onclick="addWidgetFromPalette('http_sensor')">
+              <div><strong data-i18n="pal.http_sensor.t">🌐 HTTP/JSON Sensor</strong><span data-i18n="pal.http_sensor.s">Poll REST URL directly (no MQTT)</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'webhook_btn')" onclick="addWidgetFromPalette('webhook_btn')">
+              <div><strong data-i18n="pal.webhook_btn.t">🔗 Webhook Button</strong><span data-i18n="pal.webhook_btn.s">HTTP GET/POST request (no MQTT)</span></div>
+              <span>+</span>
+            </div>
           </div>
         </div>
 
@@ -313,6 +359,10 @@
           <div class="palette-list">
             <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'hk_light')" onclick="addFloorPin('hk_light', 500, 500)">
               <div><strong data-i18n="pal.hk_light.t">💡 Light (Apple Home)</strong><span data-i18n="pal.hk_light.s">Direct light in Apple Home app</span></div>
+              <span>+</span>
+            </div>
+            <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'ble_presence')" onclick="addFloorPin('ble_presence', 500, 500)">
+              <div><strong data-i18n="pal.ble_presence.t">📶 BLE Presence</strong><span data-i18n="pal.ble_presence.s">Apple Watch / phone + RSSI</span></div>
               <span>+</span>
             </div>
             <div class="palette-item" draggable="true" ondragstart="onPaletteDragStart(event, 'sensor')" onclick="addFloorPin('sensor', 500, 500)">
@@ -354,10 +404,13 @@
             <span id="canvasModeBadge">600 × 800 e-ink</span>
           </div>
 
-          <div id="kindleGrid" class="k-grid cols-2"
+          <div id="kindleGrid" class="k-grid"
                ondragover="onGridDragOver(event)"
                ondragleave="onGridDragLeave(event)"
                ondrop="onGridDrop(event)">
+          </div>
+          <div id="gridResizeHint" class="hint" style="text-align:center; padding:0 8px 4px; font-size:11px;" data-i18n="canvas.resizeHint">
+            Drag ↘ corner to resize blocks (e.g. 2×3, 3×3)
           </div>
 
           <div id="floorplanArea" class="fp-wrap" style="display:none;">
@@ -639,6 +692,177 @@
         <div id="schedulesList" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;"></div>
         <button class="secondary sm" onclick="addSchedule()" data-i18n="set.schedAdd">+ Add daily schedule</button>
       </div>
+
+      <div class="panel full">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+          <h2 style="margin:0;" data-i18n="set.bleTitle">📶 Bluetooth Proximity (Apple Watch / BLE)</h2>
+          <span id="bleStatusPill" class="pill" data-i18n="set.bleStOff">BLE: Disabled</span>
+        </div>
+        <p class="hint" style="margin-top:0;" data-i18n="set.bleDesc">Passively scans BLE beacons over Kindle UART/HCI to detect when your Apple Watch, iPhone, or BLE tag is nearby.</p>
+        <div class="form-grid">
+          <div class="full">
+            <label class="check-row"><input type="checkbox" id="ble_enabled" onchange="syncSettingsFromUI()" /> <span data-i18n="set.bleEnable">Enable BLE proximity scanner (Kindle hardware)</span></label>
+          </div>
+          <label class="field">
+            <span data-i18n="set.bleRssi">Wake threshold (RSSI dBm)</span>
+            <input type="number" id="ble_rssi" min="-100" max="-20" oninput="syncSettingsFromUI()" />
+            <span class="hint" data-i18n="set.bleRssiHint">-55 dBm ≈ ~0.5–1 m | -65 dBm ≈ ~1.5–2.5 m | -80 dBm ≈ whole room</span>
+          </label>
+          <label class="field">
+            <span data-i18n="set.bleAway">Mark away after silence (s)</span>
+            <input type="number" id="ble_away" min="5" max="3600" oninput="syncSettingsFromUI()" />
+          </label>
+          <div class="full" style="display:flex; flex-wrap:wrap; gap:10px 18px;">
+            <label class="check-row"><input type="checkbox" id="ble_wake_standby" onchange="syncSettingsFromUI()" /> <span data-i18n="set.bleWakeStandby">Wake from Standby screensaver</span></label>
+            <label class="check-row"><input type="checkbox" id="ble_wake_backlight" onchange="syncSettingsFromUI()" /> <span data-i18n="set.bleWakeBacklight">Turn on frontlight on arrival</span></label>
+            <label class="check-row"><input type="checkbox" id="ble_keep_awake" onchange="syncSettingsFromUI()" /> <span data-i18n="set.bleKeepAwake">Keep display awake while nearby</span></label>
+            <label class="check-row"><input type="checkbox" id="ble_publish_mqtt" onchange="syncSettingsFromUI()" /> <span data-i18n="set.blePublishMqtt">Publish presence to MQTT &amp; Home Assistant</span></label>
+            <label class="check-row"><input type="checkbox" id="ble_hk_occ" onchange="syncSettingsFromUI()" /> <span data-i18n="set.bleHkOcc">Expose Occupancy Sensor in Apple HomeKit</span></label>
+          </div>
+          <div class="full" style="margin-top:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <strong style="font-size:12px;" data-i18n="set.bleDevsTitle">Tracked devices (Apple Watch / iPhone IRK or static MAC)</strong>
+              <button class="secondary sm" onclick="addBLEDevice()" data-i18n="set.bleAddDev">+ Add device</button>
+            </div>
+            <div id="bleDevicesList" style="display:flex; flex-direction:column; gap:8px;"></div>
+          </div>
+          <div class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:8px; padding:8px 10px; font-size:12px;">
+            <details>
+              <summary style="cursor:pointer; font-weight:700;" data-i18n="set.bleIrkGuideTitle">How to get Apple Watch IRK from MacBook Keychain (~1 min)</summary>
+              <div style="margin-top:6px; line-height:1.45;" data-i18n-html="set.bleIrkGuideHtml"></div>
+            </details>
+          </div>
+          <div class="full">
+            <div style="font-size:12px; font-weight:700; margin-bottom:6px;" data-i18n="set.bleNearbyTitle">Live nearby BLE advertisers</div>
+            <div id="bleNearbyList" style="max-height:220px; overflow-y:auto; border:1px solid #d0d5dd; border-radius:6px; background:#fff; padding:6px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BATTERY GUARD -->
+      <div class="panel">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+          <h2 style="margin:0;" data-i18n="set.bgTitle">🔋 Battery Guard (24/7 Wall-Mount Protection)</h2>
+          <span id="bgStatusPill" class="pill" data-i18n="set.bgStOff">Guard: Disabled</span>
+        </div>
+        <p class="hint" style="margin-top:0;" data-i18n="set.bgDesc"></p>
+        <div class="form-grid">
+          <div class="full">
+            <label class="check-row"><input type="checkbox" id="bg_enabled" onchange="syncSettingsFromUI()" /> <span data-i18n="set.bgEnable"></span></label>
+          </div>
+          <label class="field">
+            <span data-i18n="set.bgMin"></span>
+            <input type="number" id="bg_min" min="5" max="90" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            <span data-i18n="set.bgMax"></span>
+            <input type="number" id="bg_max" min="10" max="100" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field full">
+            <span data-i18n="set.bgWidget"></span>
+            <select id="bg_widget_id" onchange="syncSettingsFromUI()"></select>
+          </label>
+          <label class="field full">
+            <span data-i18n="set.bgTopic"></span>
+            <input type="text" id="bg_topic" list="knownTopics" placeholder="zigbee2mqtt/charger/set" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            <span data-i18n="set.bgPayloadOn"></span>
+            <input type="text" id="bg_payload_on" placeholder="ON" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            <span data-i18n="set.bgPayloadOff"></span>
+            <input type="text" id="bg_payload_off" placeholder="OFF" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            <span data-i18n="set.bgHookOn"></span>
+            <input type="text" id="bg_hook_on" placeholder="http://..." oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field">
+            <span data-i18n="set.bgHookOff"></span>
+            <input type="text" id="bg_hook_off" placeholder="http://..." oninput="syncSettingsFromUI()" />
+          </label>
+        </div>
+      </div>
+
+      <!-- CZECH OTE SPOT PRICES -->
+      <div class="panel">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+          <h2 style="margin:0;" data-i18n="set.spotTitle">⚡ Czech OTE Electricity Spot Prices</h2>
+          <span id="spotStatusPill" class="pill" data-i18n="set.spotStOff">Spot: Disabled</span>
+        </div>
+        <p class="hint" style="margin-top:0;" data-i18n="set.spotDesc"></p>
+        <div class="form-grid">
+          <div class="full">
+            <label class="check-row"><input type="checkbox" id="spot_enabled" onchange="syncSettingsFromUI()" /> <span data-i18n="set.spotEnable"></span></label>
+          </div>
+          <label class="field">
+            <span data-i18n="set.spotCur"></span>
+            <select id="spot_currency" onchange="syncSettingsFromUI()">
+              <option value="CZK">CZK (Kč/kWh)</option>
+              <option value="EUR">EUR (€/MWh)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span data-i18n="set.spotVat"></span>
+            <input type="number" step="any" id="spot_vat" min="0" max="50" oninput="syncSettingsFromUI()" />
+          </label>
+          <label class="field full">
+            <span data-i18n="set.spotDist"></span>
+            <input type="number" step="0.01" id="spot_dist" min="0" max="50" oninput="syncSettingsFromUI()" />
+          </label>
+        </div>
+      </div>
+
+      <!-- LOCAL AUTOMATION RULES (WHEN -> THEN) -->
+      <div class="panel full">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+          <h2 style="margin:0;" data-i18n="set.rulesTitle">🧠 Local "When → Then" Automation Rules</h2>
+          <button type="button" class="secondary sm" onclick="addRule()" data-i18n="set.rulesAdd">+ Add automation rule</button>
+        </div>
+        <p class="hint" style="margin-top:0;" data-i18n="set.rulesDesc"></p>
+        <div id="rulesList" style="display:flex; flex-direction:column; gap:8px; margin-bottom:10px;"></div>
+        <details style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:8px; padding:8px 10px; font-size:12px;">
+          <summary style="cursor:pointer; font-weight:700;" data-i18n="set.rulesLogsTitle">Recent rule triggers</summary>
+          <div id="rulesLogBox" style="margin-top:6px;"></div>
+        </details>
+      </div>
+
+      <!-- WEB OTA, CONFIG BACKUP & APPLE SHORTCUTS API -->
+      <div class="panel full">
+        <h2 data-i18n="set.otaTitle">🔄 Firmware OTA, Config Backup &amp; Apple Shortcuts API</h2>
+        <div class="form-grid">
+          <div style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:8px; padding:10px;">
+            <strong style="font-size:12px; display:block; margin-bottom:8px;" data-i18n="set.backupTitle">Config Backup &amp; Restore</strong>
+            <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+              <a href="/api/config/export" download="kindleiot-config.yaml" style="text-decoration:none;">
+                <button type="button" class="secondary sm" data-i18n="set.backupExport">⬇ Download config.yaml</button>
+              </a>
+              <label style="display:inline-block;">
+                <input type="file" id="importCfgFile" accept=".yaml,.yml,.json" style="display:none;" onchange="importConfigFile(this)" />
+                <button type="button" class="secondary sm" onclick="document.getElementById('importCfgFile').click()" data-i18n="set.backupImport">⬆ Import YAML / JSON</button>
+              </label>
+            </div>
+            <div id="importCfgMsg" class="hint" style="margin-top:6px;"></div>
+          </div>
+          <div style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:8px; padding:10px;">
+            <strong style="font-size:12px; display:block; margin-bottom:4px;" data-i18n="set.otaFirmwareTitle">Web OTA Binary Update</strong>
+            <div id="otaHintText" class="hint" style="margin-bottom:8px;"></div>
+            <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+              <input type="file" id="otaBinaryFile" style="flex:1; min-width:160px; font-size:12px;" />
+              <button type="button" class="secondary sm" onclick="uploadOTABinary()" data-i18n="set.otaUploadBtn">⬆ Upload Binary &amp; Restart</button>
+            </div>
+            <div id="otaMsg" class="hint" style="margin-top:6px;"></div>
+          </div>
+          <div class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:8px; padding:10px; font-size:12px;">
+            <details>
+              <summary style="cursor:pointer; font-weight:700;" data-i18n="set.scTitle">📱 Apple Shortcuts / REST API Quick Reference</summary>
+              <p class="hint" style="margin:6px 0;" data-i18n="set.scDesc"></p>
+              <div id="shortcutsApiBox" style="display:flex; flex-direction:column; gap:6px;"></div>
+            </details>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -720,7 +944,11 @@
         renderDesigner();
         renderExtraBrokers();
         renderHomeKitChecklist();
+        renderBatteryWidgetSelect();
         renderSchedulesList();
+        renderRulesList();
+        renderBLEDevicesList();
+        renderShortcutsRef();
       }
       if (lastStatusData) renderStatusUI(lastStatusData);
     }
@@ -842,7 +1070,49 @@
       document.getElementById('cal_enabled').checked = !!cfg.calendar.enabled;
       document.getElementById('cal_urls').value = (cfg.calendar.urls || []).join('\n');
 
+      const bt = cfg.bluetooth = cfg.bluetooth || {
+        enabled: false,
+        rssi_threshold: -65,
+        away_timeout_sec: 30,
+        wake_standby: true,
+        wake_backlight: true,
+        keep_awake: true,
+        publish_mqtt: true,
+        homekit_occupancy: false,
+        devices: []
+      };
+      document.getElementById('ble_enabled').checked = !!bt.enabled;
+      document.getElementById('ble_rssi').value = bt.rssi_threshold ?? -65;
+      document.getElementById('ble_away').value = bt.away_timeout_sec ?? 30;
+      document.getElementById('ble_wake_standby').checked = bt.wake_standby !== false;
+      document.getElementById('ble_wake_backlight').checked = bt.wake_backlight !== false;
+      document.getElementById('ble_keep_awake').checked = bt.keep_awake !== false;
+      document.getElementById('ble_publish_mqtt').checked = bt.publish_mqtt !== false;
+      document.getElementById('ble_hk_occ').checked = !!bt.homekit_occupancy;
+      renderBLEDevicesList();
+
+      const bg = cfg.battery_guard = cfg.battery_guard || {
+        enabled: false, min_percent: 30, max_percent: 80, payload_on: 'ON', payload_off: 'OFF'
+      };
+      document.getElementById('bg_enabled').checked = !!bg.enabled;
+      document.getElementById('bg_min').value = bg.min_percent ?? 30;
+      document.getElementById('bg_max').value = bg.max_percent ?? 80;
+      document.getElementById('bg_topic').value = bg.topic || '';
+      document.getElementById('bg_payload_on').value = bg.payload_on || 'ON';
+      document.getElementById('bg_payload_off').value = bg.payload_off || 'OFF';
+      document.getElementById('bg_hook_on').value = bg.webhook_on || '';
+      document.getElementById('bg_hook_off').value = bg.webhook_off || '';
+      renderBatteryWidgetSelect();
+
+      const sp = cfg.spot_price = cfg.spot_price || { enabled: false, currency: 'CZK', vat_percent: 21, distribution_fee: 0 };
+      document.getElementById('spot_enabled').checked = !!sp.enabled;
+      document.getElementById('spot_currency').value = sp.currency === 'EUR' ? 'EUR' : 'CZK';
+      document.getElementById('spot_vat').value = (sp.vat_percent === undefined || sp.vat_percent === null) ? 21 : sp.vat_percent;
+      document.getElementById('spot_dist').value = sp.distribution_fee ?? 0;
+
       renderSchedulesList();
+      renderRulesList();
+      renderShortcutsRef();
     }
 
     function applyCityPreset(val) {
@@ -911,6 +1181,37 @@
       cfg.calendar.enabled = document.getElementById('cal_enabled').checked;
       cfg.calendar.urls = document.getElementById('cal_urls').value
         .split('\n').map(s => s.trim()).filter(Boolean);
+
+      cfg.bluetooth = cfg.bluetooth || {};
+      cfg.bluetooth.enabled = document.getElementById('ble_enabled').checked;
+      const rssiVal = parseInt(document.getElementById('ble_rssi').value, 10);
+      cfg.bluetooth.rssi_threshold = Number.isNaN(rssiVal) ? -65 : rssiVal;
+      const awayVal = parseInt(document.getElementById('ble_away').value, 10);
+      cfg.bluetooth.away_timeout_sec = Number.isNaN(awayVal) ? 30 : awayVal;
+      cfg.bluetooth.wake_standby = document.getElementById('ble_wake_standby').checked;
+      cfg.bluetooth.wake_backlight = document.getElementById('ble_wake_backlight').checked;
+      cfg.bluetooth.keep_awake = document.getElementById('ble_keep_awake').checked;
+      cfg.bluetooth.publish_mqtt = document.getElementById('ble_publish_mqtt').checked;
+      cfg.bluetooth.homekit_occupancy = document.getElementById('ble_hk_occ').checked;
+
+      cfg.battery_guard = cfg.battery_guard || {};
+      cfg.battery_guard.enabled = document.getElementById('bg_enabled').checked;
+      cfg.battery_guard.min_percent = parseInt(document.getElementById('bg_min').value, 10) || 30;
+      cfg.battery_guard.max_percent = parseInt(document.getElementById('bg_max').value, 10) || 80;
+      cfg.battery_guard.widget_id = document.getElementById('bg_widget_id').value || '';
+      cfg.battery_guard.topic = document.getElementById('bg_topic').value.trim();
+      cfg.battery_guard.payload_on = document.getElementById('bg_payload_on').value || 'ON';
+      cfg.battery_guard.payload_off = document.getElementById('bg_payload_off').value || 'OFF';
+      cfg.battery_guard.webhook_on = document.getElementById('bg_hook_on').value.trim();
+      cfg.battery_guard.webhook_off = document.getElementById('bg_hook_off').value.trim();
+
+      cfg.spot_price = cfg.spot_price || {};
+      cfg.spot_price.enabled = document.getElementById('spot_enabled').checked;
+      cfg.spot_price.currency = document.getElementById('spot_currency').value || 'CZK';
+      const vatRaw = document.getElementById('spot_vat').value;
+      cfg.spot_price.vat_percent = (vatRaw === '' || Number.isNaN(parseFloat(vatRaw))) ? 21 : parseFloat(vatRaw);
+      const distRaw = parseFloat(document.getElementById('spot_dist').value);
+      cfg.spot_price.distribution_fee = Number.isNaN(distRaw) ? 0 : distRaw;
 
       document.getElementById('canvasTitle').textContent = cfg.device.title;
       markDirty(true);
@@ -1172,6 +1473,177 @@
       }).join('');
     }
 
+    function renderBLEDevicesList() {
+      const box = document.getElementById('bleDevicesList');
+      if (!box || !cfg) return;
+      cfg.bluetooth = cfg.bluetooth || { devices: [] };
+      const devs = cfg.bluetooth.devices = cfg.bluetooth.devices || [];
+      if (devs.length === 0) {
+        box.innerHTML = `<div class="hint">${escapeHtml(t('set.bleDevsEmpty'))}</div>`;
+        return;
+      }
+      box.innerHTML = devs.map((d, i) => `
+        <div style="border:1px solid #d0d5dd; border-radius:6px; padding:8px; background:#f8f9fa;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <label class="check-row" style="margin:0;">
+                <input type="checkbox" ${d.enabled !== false ? 'checked' : ''} onchange="cfg.bluetooth.devices[${i}].enabled=this.checked; markDirty(true);" />
+                <span>${escapeHtml(t('set.bleDevEnabled'))}</span>
+              </label>
+              <span id="bleTrackStatus_${i}" class="pill">${escapeHtml(t('set.bleTrackIdle'))}</span>
+            </div>
+            <button class="danger sm" onclick="deleteBLEDevice(${i})">✕</button>
+          </div>
+          <div class="form-grid">
+            <label class="field">${escapeHtml(t('set.bleDevName'))}
+              <input type="text" value="${escapeAttr(d.name || '')}" oninput="cfg.bluetooth.devices[${i}].name=this.value; markDirty(true);" />
+            </label>
+            <label class="field">${escapeHtml(t('set.bleDevMac'))}
+              <input type="text" placeholder="AA:BB:CC:DD:EE:FF" value="${escapeAttr(d.mac || '')}" oninput="cfg.bluetooth.devices[${i}].mac=this.value.trim(); markDirty(true);" />
+            </label>
+            <label class="field full">${escapeHtml(t('set.bleDevIrk'))}
+              <input type="text" style="font-family:monospace; font-size:12px;" placeholder="Base64 or 32 hex chars" value="${escapeAttr(d.irk || '')}" oninput="cfg.bluetooth.devices[${i}].irk=this.value.trim(); markDirty(true);" />
+            </label>
+          </div>
+        </div>
+      `).join('');
+      if (lastStatusData && lastStatusData.ble) {
+        updateBLETrackedBadges(lastStatusData.ble);
+      }
+    }
+
+    function addBLEDevice() {
+      if (!cfg) return;
+      cfg.bluetooth = cfg.bluetooth || {};
+      cfg.bluetooth.devices = cfg.bluetooth.devices || [];
+      cfg.bluetooth.devices.push({
+        id: 'ble_' + Math.random().toString(36).slice(2, 6),
+        name: t('set.bleNewDevName'),
+        irk: '',
+        mac: '',
+        enabled: true
+      });
+      markDirty(true);
+      renderBLEDevicesList();
+    }
+
+    function deleteBLEDevice(idx) {
+      if (!cfg?.bluetooth?.devices) return;
+      cfg.bluetooth.devices.splice(idx, 1);
+      markDirty(true);
+      renderBLEDevicesList();
+    }
+
+    function trackBLEMAC(mac) {
+      if (!cfg || !mac) return;
+      cfg.bluetooth = cfg.bluetooth || {};
+      cfg.bluetooth.devices = cfg.bluetooth.devices || [];
+      const upper = mac.toUpperCase();
+      if (cfg.bluetooth.devices.some(d => (d.mac || '').toUpperCase() === upper)) return;
+      cfg.bluetooth.devices.push({
+        id: 'ble_' + Math.random().toString(36).slice(2, 6),
+        name: upper,
+        irk: '',
+        mac: upper,
+        enabled: true
+      });
+      markDirty(true);
+      renderBLEDevicesList();
+    }
+
+    function updateBLETrackedBadges(ble) {
+      const devs = cfg?.bluetooth?.devices || [];
+      const tracked = ble?.tracked || [];
+      devs.forEach((d, i) => {
+        const el = document.getElementById('bleTrackStatus_' + i);
+        if (!el) return;
+        if (d.enabled === false) {
+          el.textContent = t('set.bleTrackOff');
+          el.className = 'pill';
+          return;
+        }
+        const ts = tracked.find(x => (d.id && x.id === d.id)) || tracked[i];
+        if (!ts) {
+          el.textContent = t('set.bleTrackIdle');
+          el.className = 'pill';
+        } else if (ts.near) {
+          el.textContent = t('set.bleTrackNear', { rssi: ts.rssi });
+          el.className = 'pill ok';
+        } else if (ts.seen_ago_sec >= 0) {
+          el.textContent = t('set.bleTrackSeen', { rssi: ts.rssi, s: ts.seen_ago_sec });
+          el.className = 'pill dirty';
+        } else {
+          el.textContent = t('set.bleTrackIdle');
+          el.className = 'pill';
+        }
+      });
+    }
+
+    function renderBLEStatus(ble) {
+      const pill = document.getElementById('bleStatusPill');
+      const box = document.getElementById('bleNearbyList');
+      if (!ble) ble = { enabled: false, nearby: [] };
+      if (pill) {
+        if (!ble.enabled) {
+          pill.textContent = t('set.bleStOff');
+          pill.className = 'pill';
+        } else if (ble.last_error) {
+          if (ble.backend === 'desktop') {
+            pill.textContent = t('set.bleStDesktop');
+            pill.className = 'pill';
+          } else {
+            pill.textContent = t('set.bleStErr', { err: ble.last_error });
+            pill.className = 'pill err';
+          }
+        } else if (ble.present) {
+          pill.textContent = t('set.bleStNear', { dev: ble.matched_device || 'BLE', rssi: ble.best_rssi });
+          pill.className = 'pill ok';
+        } else if (ble.running) {
+          pill.textContent = t('set.bleStScan', { n: ble.packets_total || 0, u: (ble.nearby || []).length });
+          pill.className = 'pill dirty';
+        } else {
+          pill.textContent = t('set.bleStWait');
+          pill.className = 'pill';
+        }
+      }
+      updateBLETrackedBadges(ble);
+      if (!box) return;
+      const nearby = ble.nearby || [];
+      if (nearby.length === 0) {
+        box.innerHTML = `<div class="hint" style="padding:4px;">${escapeHtml(t('set.bleNearbyEmpty'))}</div>`;
+        return;
+      }
+      box.innerHTML = `
+        <table class="topic-table" style="font-size:12px;">
+          <thead>
+            <tr>
+              <th>${escapeHtml(t('set.bleThMac'))}</th>
+              <th>${escapeHtml(t('set.bleThRssi'))}</th>
+              <th>${escapeHtml(t('set.bleThInfo'))}</th>
+              <th>${escapeHtml(t('set.bleThAction'))}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${nearby.map(n => {
+              const infoParts = [];
+              if (n.matched_name) infoParts.push(`<span class="pill ok">${escapeHtml(t('set.bleMatchedBadge', { name: n.matched_name }))}</span>`);
+              if (n.name) infoParts.push(`<strong>${escapeHtml(n.name)}</strong>`);
+              if (n.apple_types && n.apple_types.length) infoParts.push(`<span class="hint">Apple [${escapeHtml(n.apple_types.join(', '))}]</span>`);
+              const canTrack = n.addr_kind !== 'Random-RPA' && !n.matched_name;
+              return `
+                <tr>
+                  <td><code>${escapeHtml(n.mac)}</code> <span class="hint">(${escapeHtml(n.addr_kind)})</span></td>
+                  <td><strong>${n.rssi} dBm</strong> <span class="hint">(${n.seen_ago_sec}s)</span></td>
+                  <td>${infoParts.join(' ') || '<span class="hint">—</span>'}</td>
+                  <td>${canTrack ? `<button class="secondary sm" onclick="trackBLEMAC('${escapeAttr(n.mac)}')">${escapeHtml(t('set.bleTrackMacBtn'))}</button>` : ''}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
     function createDefaultWidget(type, topicHint) {
       const uid = type + '_' + Math.random().toString(36).slice(2, 6);
       if (type === 'hk_light') {
@@ -1190,6 +1662,21 @@
           optimistic: true,
           homekit: true,
           homekit_type: 'lightbulb'
+        };
+      }
+      if (type === 'ble_presence') {
+        return {
+          id: uid,
+          type: 'sensor',
+          label: t('def.blePresence'),
+          subtitle: 'Bluetooth',
+          icon: 'bluetooth',
+          span: 1,
+          state_topic: 'local/ble/presence',
+          value_map: { ON: t('def.bleNear'), OFF: t('def.bleAway') },
+          secondary_topic: 'local/ble/rssi',
+          secondary_unit: ' dBm',
+          show_in_standby: true
         };
       }
       const base = { id: uid, type, label: t('def.widget'), span: 1 };
@@ -1217,10 +1704,249 @@
       if (type === 'calendar') {
         return { ...base, type: 'calendar', label: t('def.calendar'), span: 2 };
       }
+      if (type === 'checklist') {
+        return {
+          ...base,
+          type: 'checklist',
+          label: t('def.checklist'),
+          icon: 'checklist',
+          span: 2,
+          row_span: 2,
+          checklist_items: [
+            { id: 'item_1', text: t('def.chkSample1'), done: true },
+            { id: 'item_2', text: t('def.chkSample2'), done: false }
+          ]
+        };
+      }
+      if (type === 'spot_price') {
+        return { ...base, type: 'spot_price', label: t('def.spot'), icon: 'bolt', span: 2, row_span: 2 };
+      }
+      if (type === 'image') {
+        return {
+          ...base,
+          type: 'image',
+          label: t('def.image'),
+          icon: 'image',
+          span: 2,
+          row_span: 2,
+          image_url: 'https://www.chmi.cz/files/portal/docs/meteo/rad/inca-cz/data/czrad-z_max3d/pacz2gmaps3.z_max3d.latest.png',
+          image_interval_sec: 300,
+          image_fit: 'contain',
+          image_dither: true
+        };
+      }
+      if (type === 'http_sensor') {
+        return {
+          ...base,
+          type: 'sensor',
+          label: t('def.httpSensor'),
+          state_topic: 'local/http/' + uid,
+          http_url: 'http://192.168.1.50/rpc/Switch.GetStatus?id=0',
+          http_interval_sec: 30,
+          state_json_path: '$.apower',
+          precision: 1,
+          unit: 'W'
+        };
+      }
+      if (type === 'webhook_btn') {
+        return {
+          ...base,
+          type: 'button',
+          label: t('def.webhookBtn'),
+          command_topic: '',
+          webhook_url: 'http://192.168.1.50/relay/0?turn=toggle',
+          webhook_method: 'GET'
+        };
+      }
       if (type === 'select') {
         return { ...base, label: t('def.mode'), span: 2, state_topic: topicHint || 'home/mode/state', command_topic: (topicHint || 'home/mode') + '/set', options: [{ label: t('def.optHome'), payload: 'home' }, { label: t('def.optNight'), payload: 'night' }] };
       }
       return { ...base, type: 'sensor', label: t('def.sensor'), state_topic: topicHint || 'home/sensor/temp', unit: '°C', stale_seconds: 600 };
+    }
+
+    function computeGridLayout(widgets, cols, fixedRows) {
+      cols = Math.max(1, cols || 2);
+      const rowLimit = fixedRows > 0 ? fixedRows : 6;
+      const occ = new Set();
+      const key = (c, r) => c + ',' + r;
+      const canPlace = (c, r, sw, sh) => {
+        if (c < 0 || r < 0 || c + sw > cols) return false;
+        for (let dy = 0; dy < sh; dy++) {
+          for (let dx = 0; dx < sw; dx++) {
+            if (occ.has(key(c + dx, r + dy))) return false;
+          }
+        }
+        return true;
+      };
+      const mark = (c, r, sw, sh) => {
+        for (let dy = 0; dy < sh; dy++) {
+          for (let dx = 0; dx < sw; dx++) {
+            occ.add(key(c + dx, r + dy));
+          }
+        }
+      };
+
+      const placed = new Array(widgets.length);
+      const needsAuto = new Array(widgets.length).fill(false);
+
+      widgets.forEach((w, i) => {
+        const sw = Math.max(1, Math.min(w.span || 1, cols));
+        const sh = Math.max(1, Math.min(w.row_span || 1, rowLimit));
+        if (Number.isInteger(w.grid_col) && Number.isInteger(w.grid_row)) {
+          const c = Math.max(0, Math.min(w.grid_col, cols - sw));
+          const r = Math.max(0, w.grid_row);
+          if (canPlace(c, r, sw, sh)) {
+            mark(c, r, sw, sh);
+            placed[i] = { idx: i, col: c, row: r, span: sw, rowSpan: sh };
+            return;
+          }
+        }
+        placed[i] = { idx: i, col: 0, row: 0, span: sw, rowSpan: sh };
+        needsAuto[i] = true;
+      });
+
+      widgets.forEach((w, i) => {
+        if (!needsAuto[i]) return;
+        const sw = placed[i].span;
+        const sh = placed[i].rowSpan;
+        for (let r = 0; r < 100; r++) {
+          if (fixedRows > 0 && sh <= fixedRows && Math.floor(r / fixedRows) !== Math.floor((r + sh - 1) / fixedRows)) {
+            r = (Math.floor(r / fixedRows) + 1) * fixedRows - 1;
+            continue;
+          }
+          let done = false;
+          for (let c = 0; c <= cols - sw; c++) {
+            if (canPlace(c, r, sw, sh)) {
+              mark(c, r, sw, sh);
+              placed[i].col = c;
+              placed[i].row = r;
+              done = true;
+              break;
+            }
+          }
+          if (done) break;
+        }
+      });
+
+      let totalRows = 0;
+      placed.forEach(p => {
+        if (p && p.row + p.rowSpan > totalRows) totalRows = p.row + p.rowSpan;
+      });
+      return { placed, totalRows };
+    }
+
+    function unpinColliders(page, keepIdx, c, r, sw, sh) {
+      const cols = Math.max(1, page.columns || 2);
+      const fixedRows = page.rows || 0;
+      const rowLimit = fixedRows > 0 ? fixedRows : 6;
+      (page.widgets || []).forEach((other, j) => {
+        if (j === keepIdx) return;
+        if (!Number.isInteger(other.grid_col) || !Number.isInteger(other.grid_row)) return;
+        const osw = Math.max(1, Math.min(other.span || 1, cols));
+        const osh = Math.max(1, Math.min(other.row_span || 1, rowLimit));
+        const oc = Math.max(0, Math.min(other.grid_col, cols - osw));
+        const orow = Math.max(0, other.grid_row);
+        const overlapX = c < oc + osw && c + sw > oc;
+        const overlapY = r < orow + osh && r + sh > orow;
+        if (overlapX && overlapY) {
+          delete other.grid_col;
+          delete other.grid_row;
+        }
+      });
+    }
+
+    function clampPageWidgetsToGrid(page) {
+      const cols = Math.max(1, Math.min(6, page.columns || 2));
+      const fixedRows = Math.max(0, Math.min(6, page.rows || 0));
+      const rowLimit = fixedRows > 0 ? fixedRows : 6;
+      page.columns = cols;
+      page.rows = fixedRows;
+      (page.widgets || []).forEach(w => {
+        w.span = Math.max(1, Math.min(w.span || 1, cols));
+        if (w.row_span && w.row_span > rowLimit) {
+          w.row_span = rowLimit;
+          if (w.row_span <= 1) delete w.row_span;
+        }
+        if (Number.isInteger(w.grid_col)) {
+          w.grid_col = Math.max(0, Math.min(w.grid_col, cols - w.span));
+        }
+      });
+    }
+
+    function setGridColumns(cols) {
+      const page = cfg?.pages?.[activePageIdx];
+      if (!page) return;
+      page.columns = cols;
+      clampPageWidgetsToGrid(page);
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function setGridRows(rows) {
+      const page = cfg?.pages?.[activePageIdx];
+      if (!page) return;
+      page.rows = rows;
+      clampPageWidgetsToGrid(page);
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function applyGridPreset(cols, rows) {
+      const page = cfg?.pages?.[activePageIdx];
+      if (!page) return;
+      page.columns = cols;
+      page.rows = rows;
+      clampPageWidgetsToGrid(page);
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function autoPackActivePage() {
+      const page = cfg?.pages?.[activePageIdx];
+      if (!page) return;
+      (page.widgets || []).forEach(w => {
+        delete w.grid_col;
+        delete w.grid_row;
+      });
+      markDirty(true);
+      renderDesigner();
+    }
+
+    function dropOnGridCell(c, r) {
+      document.querySelectorAll('.k-grid-cell').forEach(el => el.classList.remove('drag-over-cell'));
+      document.querySelectorAll('.k-card').forEach(el => el.classList.remove('drop-before'));
+      if (!dragSource) return;
+      const page = cfg.pages[activePageIdx];
+      page.widgets = page.widgets || [];
+      const cols = Math.max(1, page.columns || 2);
+      const fixedRows = page.rows || 0;
+      const rowLimit = fixedRows > 0 ? fixedRows : 6;
+      if (dragSource.kind === 'palette') {
+        const w = createDefaultWidget(dragSource.type);
+        const sw = Math.max(1, Math.min(w.span || 1, cols));
+        const sh = Math.max(1, Math.min(w.row_span || 1, rowLimit));
+        w.span = sw;
+        if (sh > 1) w.row_span = sh;
+        w.grid_col = Math.max(0, Math.min(c, cols - sw));
+        w.grid_row = Math.max(0, r);
+        page.widgets.push(w);
+        selectedWidgetIdx = page.widgets.length - 1;
+        unpinColliders(page, selectedWidgetIdx, w.grid_col, w.grid_row, sw, sh);
+      } else if (dragSource.kind === 'widget') {
+        const idx = dragSource.idx;
+        const w = page.widgets[idx];
+        if (w) {
+          const sw = Math.max(1, Math.min(w.span || 1, cols));
+          const sh = Math.max(1, Math.min(w.row_span || 1, rowLimit));
+          w.grid_col = Math.max(0, Math.min(c, cols - sw));
+          w.grid_row = Math.max(0, r);
+          unpinColliders(page, idx, w.grid_col, w.grid_row, sw, sh);
+          selectedWidgetIdx = idx;
+        }
+      }
+      dragSource = null;
+      markDirty(true);
+      renderDesigner();
     }
 
     // Grid Drag & Drop
@@ -1231,6 +1957,10 @@
     }
 
     function onWidgetDragStart(ev, idx) {
+      if (ev.target && ev.target.closest && ev.target.closest('.k-resize-handle')) {
+        ev.preventDefault();
+        return;
+      }
       dragSource = { kind: 'widget', idx };
       ev.dataTransfer.effectAllowed = 'move';
       ev.dataTransfer.setData('text/plain', String(idx));
@@ -1255,6 +1985,11 @@
         page.widgets.push(createDefaultWidget(dragSource.type));
         selectedWidgetIdx = page.widgets.length - 1;
       } else if (dragSource.kind === 'widget') {
+        const w = page.widgets[dragSource.idx];
+        if (w) {
+          delete w.grid_col;
+          delete w.grid_row;
+        }
         const [moved] = page.widgets.splice(dragSource.idx, 1);
         page.widgets.push(moved);
         selectedWidgetIdx = page.widgets.length - 1;
@@ -1275,19 +2010,47 @@
       ev.preventDefault();
       ev.stopPropagation();
       document.querySelectorAll('.k-card').forEach(c => c.classList.remove('drop-before'));
+      document.querySelectorAll('.k-grid-cell').forEach(el => el.classList.remove('drag-over-cell'));
       if (!dragSource) return;
       const page = cfg.pages[activePageIdx];
       page.widgets = page.widgets || [];
+      const cols = Math.max(1, page.columns || 2);
       if (dragSource.kind === 'palette') {
-        page.widgets.splice(targetIdx, 0, createDefaultWidget(dragSource.type));
+        const nw = createDefaultWidget(dragSource.type);
+        const tgt = page.widgets[targetIdx];
+        if (tgt && Number.isInteger(tgt.grid_col) && Number.isInteger(tgt.grid_row)) {
+          const sw = Math.max(1, Math.min(nw.span || 1, cols));
+          nw.grid_col = Math.max(0, Math.min(tgt.grid_col, cols - sw));
+          nw.grid_row = tgt.grid_row;
+          delete tgt.grid_col;
+          delete tgt.grid_row;
+        }
+        page.widgets.splice(targetIdx, 0, nw);
         selectedWidgetIdx = targetIdx;
       } else if (dragSource.kind === 'widget') {
         const fromIdx = dragSource.idx;
         if (fromIdx !== targetIdx) {
-          const [moved] = page.widgets.splice(fromIdx, 1);
-          const insertAt = fromIdx < targetIdx ? targetIdx - 1 : targetIdx;
-          page.widgets.splice(insertAt, 0, moved);
-          selectedWidgetIdx = insertAt;
+          const fw = page.widgets[fromIdx];
+          const tw = page.widgets[targetIdx];
+          if (fw && tw && Number.isInteger(fw.grid_col) && Number.isInteger(fw.grid_row) &&
+              Number.isInteger(tw.grid_col) && Number.isInteger(tw.grid_row)) {
+            const tc = tw.grid_col, tr = tw.grid_row;
+            const fc = fw.grid_col, fr = fw.grid_row;
+            fw.grid_col = Math.max(0, Math.min(tc, cols - Math.max(1, Math.min(fw.span || 1, cols))));
+            fw.grid_row = tr;
+            tw.grid_col = Math.max(0, Math.min(fc, cols - Math.max(1, Math.min(tw.span || 1, cols))));
+            tw.grid_row = fr;
+            selectedWidgetIdx = fromIdx;
+          } else {
+            if (fw) {
+              delete fw.grid_col;
+              delete fw.grid_row;
+            }
+            const [moved] = page.widgets.splice(fromIdx, 1);
+            const insertAt = fromIdx < targetIdx ? targetIdx - 1 : targetIdx;
+            page.widgets.splice(insertAt, 0, moved);
+            selectedWidgetIdx = insertAt;
+          }
         }
       }
       dragSource = null;
@@ -1331,6 +2094,8 @@
       const copy = JSON.parse(JSON.stringify(ws[idx]));
       copy.id = copy.type + '_' + Math.random().toString(36).slice(2, 6);
       copy.label = copy.label + t('insp.copySuffix');
+      delete copy.grid_col;
+      delete copy.grid_row;
       ws.splice(idx + 1, 0, copy);
       selectedWidgetIdx = idx + 1;
       markDirty(true);
@@ -1427,6 +2192,7 @@
       document.getElementById('gridPalettePanel').style.display = isFP ? 'none' : 'block';
       document.getElementById('floorplanToolsPanel').style.display = isFP ? 'block' : 'none';
       document.getElementById('kindleGrid').style.display = isFP ? 'none' : 'grid';
+      document.getElementById('gridResizeHint').style.display = isFP ? 'none' : 'block';
       document.getElementById('floorplanArea').style.display = isFP ? 'flex' : 'none';
       document.getElementById('canvasModeBadge').textContent = isFP
         ? t('canvas.modeFP')
@@ -1441,7 +2207,9 @@
       renderKindleTabs();
       renderInspector();
       renderHomeKitChecklist();
+      renderBatteryWidgetSelect();
       renderSchedulesList();
+      renderRulesList();
     }
 
     function renderPagesList() {
@@ -1523,13 +2291,28 @@
             </select>
           </label>
           ${!isFP ? `
-          <label class="field full">${escapeHtml(t('pages.propCols'))}
-            <select onchange="cfg.pages[activePageIdx].columns=parseInt(this.value,10); markDirty(true); renderKindleGrid();">
-              <option value="2" ${(cur.columns||2)===2?'selected':''}>${escapeHtml(t('pages.cols2'))}</option>
-              <option value="3" ${cur.columns===3?'selected':''}>${escapeHtml(t('pages.cols3'))}</option>
-              <option value="1" ${cur.columns===1?'selected':''}>${escapeHtml(t('pages.cols1'))}</option>
+          <label class="field">${escapeHtml(t('pages.propCols'))}
+            <select onchange="setGridColumns(parseInt(this.value,10))">
+              ${[1, 2, 3, 4, 5, 6].map(c => `<option value="${c}" ${(cur.columns||2)===c?'selected':''}>${escapeHtml(t('pages.colsN', { n: c }))}</option>`).join('')}
             </select>
-          </label>` : ''}
+          </label>
+          <label class="field">${escapeHtml(t('pages.propRows'))}
+            <select onchange="setGridRows(parseInt(this.value,10))">
+              <option value="0" ${!(cur.rows>0)?'selected':''}>${escapeHtml(t('pages.rowsAuto'))}</option>
+              ${[2, 3, 4, 5, 6].map(r => `<option value="${r}" ${cur.rows===r?'selected':''}>${escapeHtml(t('pages.rowsN', { n: r }))}</option>`).join('')}
+            </select>
+          </label>
+          <div class="full">
+            <span class="hint">${escapeHtml(t('pages.gridPresets'))}:</span>
+            <div class="preset-pills">
+              <button type="button" class="secondary sm" onclick="applyGridPreset(2, 4)">2×4</button>
+              <button type="button" class="secondary sm" onclick="applyGridPreset(3, 3)">3×3</button>
+              <button type="button" class="secondary sm" onclick="applyGridPreset(3, 4)">3×4</button>
+              <button type="button" class="secondary sm" onclick="applyGridPreset(4, 3)">4×3</button>
+              <button type="button" class="secondary sm" onclick="applyGridPreset(4, 4)">4×4</button>
+              <button type="button" class="secondary sm" onclick="autoPackActivePage()">${escapeHtml(t('pages.autoPackBtn'))}</button>
+            </div>
+          </div>` : ''}
           <label class="check-row full">
             <input type="checkbox" ${cur.hidden ? 'checked' : ''} onchange="setActivePageHidden(this.checked)" />
             ${escapeHtml(t('pages.propHidden'))}
@@ -1564,24 +2347,133 @@
       });
     }
 
+    function startCardResize(ev, idx, pos, cols, fixedRows, displayRows) {
+      ev.stopPropagation();
+      ev.preventDefault();
+      const page = cfg?.pages?.[activePageIdx];
+      const w = page?.widgets?.[idx];
+      const grid = document.getElementById('kindleGrid');
+      if (!w || !grid) return;
+
+      const gridRect = grid.getBoundingClientRect();
+      const pad = cols >= 4 ? 8 : 10;
+      const gap = cols >= 4 ? 6 : 8;
+      const colW = Math.max(24, (gridRect.width - 2 * pad - (cols - 1) * gap) / cols);
+      const rowH = Math.max(24, (gridRect.height - 2 * pad - (displayRows - 1) * gap) / displayRows);
+      const startX = ev.clientX;
+      const startY = ev.clientY;
+      const maxSpan = Math.max(1, cols - pos.col);
+      let maxRowSpan = 6;
+      if (fixedRows > 0) {
+        const subStart = Math.floor(pos.row / fixedRows) * fixedRows;
+        maxRowSpan = Math.max(1, (subStart + fixedRows) - pos.row);
+      }
+
+      let curSpan = pos.span;
+      let curRowSpan = Math.min(pos.rowSpan, maxRowSpan);
+
+      const ghost = document.createElement('div');
+      ghost.className = 'k-resize-ghost';
+      const updateGhost = () => {
+        ghost.style.gridColumn = `${pos.col + 1} / span ${curSpan}`;
+        ghost.style.gridRow = `${pos.row + 1} / span ${curRowSpan}`;
+        ghost.textContent = `${curSpan}×${curRowSpan}`;
+      };
+      updateGhost();
+      grid.appendChild(ghost);
+
+      const onMove = (mv) => {
+        const dx = mv.clientX - startX;
+        const dy = mv.clientY - startY;
+        const nextSpan = Math.max(1, Math.min(maxSpan, pos.span + Math.round(dx / (colW + gap))));
+        const nextRow = Math.max(1, Math.min(maxRowSpan, pos.rowSpan + Math.round(dy / (rowH + gap))));
+        if (nextSpan !== curSpan || nextRow !== curRowSpan) {
+          curSpan = nextSpan;
+          curRowSpan = nextRow;
+          updateGhost();
+        }
+      };
+
+      const finish = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', finish);
+        window.removeEventListener('pointercancel', finish);
+        ghost.remove();
+
+        w.span = curSpan;
+        if (curRowSpan > 1) w.row_span = curRowSpan;
+        else delete w.row_span;
+        w.grid_col = pos.col;
+        w.grid_row = pos.row;
+        unpinColliders(page, idx, pos.col, pos.row, curSpan, curRowSpan);
+        selectedWidgetIdx = idx;
+        markDirty(true);
+        renderDesigner();
+      };
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', finish);
+      window.addEventListener('pointercancel', finish);
+    }
+
     function renderKindleGrid() {
       const page = cfg.pages[activePageIdx];
       const grid = document.getElementById('kindleGrid');
-      const cols = page.columns || 2;
-      grid.className = 'k-grid cols-' + cols;
+      const cols = Math.max(1, Math.min(6, page.columns || 2));
+      const fixedRows = Math.max(0, Math.min(6, page.rows || 0));
+      const isLand = cfg.device.orientation === 'landscape' || cfg.device.orientation === 'landscape_cw';
+
+      const layout = computeGridLayout(page.widgets || [], cols, fixedRows);
+      const displayRows = fixedRows > 0
+        ? Math.max(fixedRows, layout.totalRows)
+        : Math.max(isLand ? 3 : 4, layout.totalRows);
+
+      grid.className = 'k-grid' + (fixedRows === 0 ? ' auto-rows' : '') + (cols >= 4 ? ' cols-dense' : '');
+      grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+      if (fixedRows > 0 && layout.totalRows <= fixedRows) {
+        grid.style.gridTemplateRows = `repeat(${displayRows}, minmax(0, 1fr))`;
+        grid.style.alignContent = 'stretch';
+      } else {
+        grid.style.gridTemplateRows = `repeat(${displayRows}, minmax(84px, auto))`;
+        grid.style.alignContent = 'start';
+      }
       grid.innerHTML = '';
+
+      for (let r = 0; r < displayRows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const cell = document.createElement('div');
+          cell.className = 'k-grid-cell';
+          cell.style.gridColumn = String(c + 1);
+          cell.style.gridRow = String(r + 1);
+          cell.ondragover = (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            document.querySelectorAll('.k-grid-cell').forEach(el => el.classList.remove('drag-over-cell'));
+            cell.classList.add('drag-over-cell');
+          };
+          cell.ondragleave = () => cell.classList.remove('drag-over-cell');
+          cell.ondrop = (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            dropOnGridCell(c, r);
+          };
+          grid.appendChild(cell);
+        }
+      }
 
       const typeNames = {
         switch: t('canvas.t.switch'), button: t('canvas.t.button'), stepper: t('canvas.t.stepper'),
         sensor: t('canvas.t.sensor'), gauge: t('canvas.t.gauge'), chart: t('canvas.t.chart'), select: t('canvas.t.select'),
-        weather: t('canvas.t.weather'), timer: t('canvas.t.timer'), calendar: t('canvas.t.calendar')
+        weather: t('canvas.t.weather'), timer: t('canvas.t.timer'), calendar: t('canvas.t.calendar'),
+        checklist: t('canvas.t.checklist'), spot_price: t('canvas.t.spot_price'), image: t('canvas.t.image')
       };
 
       (page.widgets || []).forEach((w, idx) => {
+        const pos = layout.placed[idx] || { col: 0, row: 0, span: 1, rowSpan: 1 };
         const card = document.createElement('div');
-        const span = Math.min(w.span || 1, cols);
-        const spanCls = span === 3 ? ' span-3' : (span === 2 ? ' span-2' : '');
-        card.className = 'k-card' + spanCls + (idx === selectedWidgetIdx ? ' selected' : '');
+        card.className = 'k-card' + (idx === selectedWidgetIdx ? ' selected' : '');
+        card.style.gridColumn = `${pos.col + 1} / span ${pos.span}`;
+        card.style.gridRow = `${pos.row + 1} / span ${pos.rowSpan}`;
         card.draggable = true;
         card.ondragstart = ev => onWidgetDragStart(ev, idx);
         card.ondragover = ev => onCardDragOver(ev);
@@ -1598,18 +2490,27 @@
         if (w.type === 'weather') mock = t('canvas.mock.weather');
         if (w.type === 'timer') mock = `⏱ ${(w.timer_presets && w.timer_presets.length ? w.timer_presets : [5,15,30]).join('m | ')}m`;
         if (w.type === 'calendar') mock = t('canvas.mock.calendar');
+        if (w.type === 'checklist') mock = t('canvas.mock.checklist');
+        if (w.type === 'spot_price') mock = t('canvas.mock.spot');
+        if (w.type === 'image') mock = t('canvas.mock.image');
         if (w.type === 'select') mock = (w.options || []).map(o => o.label).join(' | ');
 
-        let subTopic = w.state_topic || w.command_topic || t('canvas.noTopic');
+        let subTopic = w.http_url || w.webhook_url || w.state_topic || w.command_topic || t('canvas.noTopic');
         if (w.type === 'weather') subTopic = t('canvas.wxSub');
         if (w.type === 'calendar') subTopic = (cfg.calendar?.urls?.length ? t('canvas.calFeeds', { n: cfg.calendar.urls.length }) : t('canvas.calUnset'));
+        if (w.type === 'spot_price') subTopic = 'spotovaelektrina.cz';
+        if (w.type === 'checklist') subTopic = `${(w.checklist_items || []).length} items`;
+        if (w.type === 'image') subTopic = w.image_url || t('canvas.noTopic');
         if (w.type === 'timer' && w.target_widget_id) subTopic = t('canvas.timerTarget', { id: w.target_widget_id, state: w.target_state || 'OFF' });
 
         card.innerHTML = `
           <div>
             <div class="k-card-top">
               <div class="k-card-title">${w.homekit ? '🏠 ' : ''}${escapeHtml(w.label || w.id)}</div>
-              <span class="k-card-type">${escapeHtml(typeNames[w.type] || w.type)}</span>
+              <div class="k-card-badges">
+                <span class="k-card-size">${pos.span}×${pos.rowSpan}</span>
+                <span class="k-card-type">${escapeHtml(typeNames[w.type] || w.type)}</span>
+              </div>
             </div>
             <div class="k-card-sub">${w.broker_id ? '[' + escapeHtml(w.broker_id) + '] ' : ''}${escapeHtml(subTopic)}</div>
           </div>
@@ -1619,13 +2520,12 @@
             <button class="secondary sm" onclick="moveWidget(${idx}, 1)">▶</button>
             <button class="danger sm" onclick="deleteWidget(${idx})">✕</button>
           </div>
+          <div class="k-resize-handle" title="${escapeAttr(t('canvas.resizeHint'))}">↘</div>
         `;
+        const handle = card.querySelector('.k-resize-handle');
+        handle.addEventListener('pointerdown', (ev) => startCardResize(ev, idx, pos, cols, fixedRows, displayRows));
         grid.appendChild(card);
       });
-
-      if (!page.widgets || page.widgets.length === 0) {
-        grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:80px 20px; color:#777; font-size:13px;">${escapeHtml(t('canvas.empty'))}</div>`;
-      }
     }
 
     // ---------------- FLOORPLAN EDITOR ----------------
@@ -2025,6 +2925,32 @@
           <label class="field">${escapeHtml(t('insp.valOff'))}
             <input type="text" value="${escapeAttr(w.value_off || 'OFF')}" oninput="_setW('value_off', this.value)" />
           </label>
+          <details class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:6px; padding:8px;" ${(w.webhook_url||w.webhook_off_url)?'open':''}>
+            <summary style="cursor:pointer; font-size:12px; font-weight:700;">${escapeHtml(t('insp.hookHeading'))}</summary>
+            <div class="form-grid" style="margin-top:6px;">
+              <label class="field full">${escapeHtml(t('insp.hookUrl'))}
+                <input type="text" value="${escapeAttr(w.webhook_url || '')}" placeholder="http://192.168.1.50/relay/0?turn={{state_lower}}" oninput="_setW('webhook_url', this.value)" />
+              </label>
+              <label class="field">${escapeHtml(t('insp.hookMethod'))}
+                <select onchange="_setW('webhook_method', this.value)">
+                  <option value="" ${!w.webhook_method?'selected':''}>Auto (GET/POST)</option>
+                  <option value="GET" ${w.webhook_method==='GET'?'selected':''}>GET</option>
+                  <option value="POST" ${w.webhook_method==='POST'?'selected':''}>POST</option>
+                  <option value="PUT" ${w.webhook_method==='PUT'?'selected':''}>PUT</option>
+                </select>
+              </label>
+              <label class="field">${escapeHtml(t('insp.hookBody'))}
+                <input type="text" value="${escapeAttr(w.webhook_body || '')}" placeholder='{"on":true}' oninput="_setW('webhook_body', this.value)" />
+              </label>
+              <label class="field full">${escapeHtml(t('insp.hookOffUrl'))}
+                <input type="text" value="${escapeAttr(w.webhook_off_url || '')}" placeholder="http://192.168.1.50/relay/0?turn=off" oninput="_setW('webhook_off_url', this.value)" />
+              </label>
+              <label class="field full">${escapeHtml(t('insp.hookOffBody'))}
+                <input type="text" value="${escapeAttr(w.webhook_off_body || '')}" oninput="_setW('webhook_off_body', this.value)" />
+              </label>
+              <div class="hint full">${escapeHtml(t('insp.hookHint'))}</div>
+            </div>
+          </details>
         `;
       } else if (w.type === 'button') {
         w.macro_actions = w.macro_actions || [];
@@ -2077,6 +3003,26 @@
           <div class="full">
             <label class="check-row"><input type="checkbox" ${w.confirm ? 'checked' : ''} onchange="_setW('confirm', this.checked)" /> ${escapeHtml(t('insp.confirm2x'))}</label>
           </div>
+          <details class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:6px; padding:8px;" ${w.webhook_url?'open':''}>
+            <summary style="cursor:pointer; font-size:12px; font-weight:700;">${escapeHtml(t('insp.hookHeading'))}</summary>
+            <div class="form-grid" style="margin-top:6px;">
+              <label class="field full">${escapeHtml(t('insp.hookUrl'))}
+                <input type="text" value="${escapeAttr(w.webhook_url || '')}" placeholder="http://192.168.1.50/relay/0?turn=toggle" oninput="_setW('webhook_url', this.value)" />
+              </label>
+              <label class="field">${escapeHtml(t('insp.hookMethod'))}
+                <select onchange="_setW('webhook_method', this.value)">
+                  <option value="" ${!w.webhook_method?'selected':''}>Auto (GET/POST)</option>
+                  <option value="GET" ${w.webhook_method==='GET'?'selected':''}>GET</option>
+                  <option value="POST" ${w.webhook_method==='POST'?'selected':''}>POST</option>
+                  <option value="PUT" ${w.webhook_method==='PUT'?'selected':''}>PUT</option>
+                </select>
+              </label>
+              <label class="field">${escapeHtml(t('insp.hookBody'))}
+                <input type="text" value="${escapeAttr(w.webhook_body || '')}" placeholder='{"press":true}' oninput="_setW('webhook_body', this.value)" />
+              </label>
+              <div class="hint full">${escapeHtml(t('insp.hookHint'))}</div>
+            </div>
+          </details>
         `;
       } else if (w.type === 'stepper') {
         specific = `
@@ -2145,6 +3091,18 @@
             </label>
             ${renderPrecisionSelect('secondary_precision', w.secondary_precision, t('insp.secDecimals'), true)}
           `}
+          <details class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:6px; padding:8px;" ${w.http_url?'open':''}>
+            <summary style="cursor:pointer; font-size:12px; font-weight:700;">${escapeHtml(t('insp.httpHeading'))}</summary>
+            <div class="form-grid" style="margin-top:6px;">
+              <label class="field full">${escapeHtml(t('insp.httpUrl'))}
+                <input type="text" value="${escapeAttr(w.http_url || '')}" placeholder="http://192.168.1.50/rpc/Switch.GetStatus?id=0" oninput="_setW('http_url', this.value); if(this.value && !w.state_topic){ _setW('state_topic', 'local/http/'+w.id); renderInspector(); }" />
+              </label>
+              <label class="field full">${escapeHtml(t('insp.httpInterval'))}
+                <input type="number" min="5" max="86400" value="${w.http_interval_sec ?? 60}" oninput="_setW('http_interval_sec', parseInt(this.value,10)||60)" />
+              </label>
+              <div class="hint full">${escapeHtml(t('insp.httpHint'))}</div>
+            </div>
+          </details>
         `;
       } else if (w.type === 'select') {
         const opts = w.options || [];
@@ -2206,6 +3164,124 @@
             ${t('insp.calHintHtml')}
           </div>
         `;
+      } else if (w.type === 'spot_price') {
+        const sp = lastStatusData?.spot;
+        const liveStr = (sp && sp.available && sp.current)
+          ? `<div style="margin-top:6px;"><strong>${escapeHtml(t('insp.spotLive', { v: sp.currency === 'EUR' ? Math.round(sp.current.price_eur) : sp.current.price_czk.toFixed(2), u: sp.unit || 'Kč/kWh', lvl: sp.current.level || '' }))}</strong></div>`
+          : '';
+        specific = `
+          <div class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:6px; padding:8px; font-size:12px;">
+            ${t('insp.spotHintHtml')}
+            ${liveStr}
+          </div>
+        `;
+      } else if (w.type === 'checklist') {
+        const liveList = lastStatusData?.checklists?.[w.id];
+        if (Array.isArray(liveList)) {
+          w.checklist_items = liveList.map(x => ({ ...x }));
+        } else {
+          w.checklist_items = w.checklist_items || [];
+        }
+        const pushChecklistLive = async () => {
+          lastStatusData = lastStatusData || {};
+          lastStatusData.checklists = lastStatusData.checklists || {};
+          lastStatusData.checklists[w.id] = w.checklist_items.map(x => ({ ...x }));
+          markDirty(true);
+          renderKindleGrid();
+          renderInspector();
+          try {
+            await fetch('/api/checklist', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'replace', widget_id: w.id, items: w.checklist_items })
+            });
+          } catch (_) {}
+        };
+        window._chkAdd = () => {
+          const inp = document.getElementById('chkNewText');
+          const txt = (inp?.value || '').trim();
+          if (!txt) return;
+          w.checklist_items.push({ id: 'chk_' + Math.random().toString(36).slice(2, 8), text: txt, done: false });
+          pushChecklistLive();
+        };
+        window._chkToggle = (ci) => {
+          if (!w.checklist_items[ci]) return;
+          w.checklist_items[ci].done = !w.checklist_items[ci].done;
+          pushChecklistLive();
+        };
+        window._chkDel = (ci) => {
+          w.checklist_items.splice(ci, 1);
+          pushChecklistLive();
+        };
+        window._chkClearDone = () => {
+          w.checklist_items = w.checklist_items.filter(x => !x.done);
+          pushChecklistLive();
+        };
+        const chkRows = w.checklist_items.map((it, ci) => `
+          <div style="display:flex; align-items:center; gap:6px; padding:3px 0; border-bottom:1px solid #eee;">
+            <input type="checkbox" ${it.done?'checked':''} onchange="_chkToggle(${ci})" />
+            <span style="flex:1; font-size:12.5px; ${it.done?'text-decoration:line-through; color:#777;':''}">${escapeHtml(it.text)}</span>
+            <button type="button" class="danger sm" style="padding:1px 6px;" onclick="_chkDel(${ci})">✕</button>
+          </div>
+        `).join('');
+        specific = `
+          <div class="full" style="background:#f8f9fa; border:1px solid #d0d5dd; border-radius:6px; padding:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <strong style="font-size:12px;">${escapeHtml(t('insp.chkTitle'))}</strong>
+              <button type="button" class="secondary sm" onclick="_chkClearDone()">${escapeHtml(t('insp.chkClearDone'))}</button>
+            </div>
+            <div style="margin-bottom:6px; max-height:190px; overflow-y:auto;">${chkRows || `<div class="hint">${escapeHtml(t('insp.chkEmpty'))}</div>`}</div>
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="chkNewText" placeholder="${escapeAttr(t('insp.chkAddPh'))}" onkeydown="if(event.key==='Enter'){event.preventDefault();_chkAdd();}" />
+              <button type="button" class="secondary sm" onclick="_chkAdd()">${escapeHtml(t('insp.chkAddBtn'))}</button>
+            </div>
+            <div class="hint" style="margin-top:4px;">${escapeHtml(t('insp.chkSyncHint'))}</div>
+          </div>
+          <label class="field full">${escapeHtml(t('insp.chkAddTopic'))}
+            <input type="text" list="knownTopics" value="${escapeAttr(w.checklist_add_topic || '')}" placeholder="home/checklist/add" oninput="_setW('checklist_add_topic', this.value)" />
+          </label>
+        `;
+      } else if (w.type === 'image') {
+        const ditherOn = w.image_dither !== false;
+        window._setImgRadar = () => {
+          w.image_url = 'https://www.chmi.cz/files/portal/docs/meteo/rad/inca-cz/data/czrad-z_max3d/pacz2gmaps3.z_max3d.latest.png';
+          markDirty(true);
+          renderDesigner();
+        };
+        window._refreshImgWidget = async () => {
+          await fetch('/api/image/refresh?widget_id=' + encodeURIComponent(w.id), { method: 'POST' });
+          setTimeout(refreshScreen, 400);
+        };
+        specific = `
+          <label class="field full">${escapeHtml(t('insp.imgUrl'))}
+            <input type="text" value="${escapeAttr(w.image_url || '')}" placeholder="https://.../snapshot.jpg" oninput="_setW('image_url', this.value)" />
+          </label>
+          <div class="full" style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button type="button" class="secondary sm" onclick="_setImgRadar()">${escapeHtml(t('insp.imgRadarBtn'))}</button>
+            <button type="button" class="secondary sm" onclick="_refreshImgWidget()">${escapeHtml(t('insp.imgRefreshBtn'))}</button>
+          </div>
+          <label class="field">${escapeHtml(t('insp.imgInterval'))}
+            <input type="number" min="10" max="86400" value="${w.image_interval_sec ?? 300}" oninput="_setW('image_interval_sec', parseInt(this.value,10)||300)" />
+          </label>
+          <label class="field">${escapeHtml(t('insp.imgFit'))}
+            <select onchange="_setW('image_fit', this.value)">
+              <option value="contain" ${(!w.image_fit||w.image_fit==='contain')?'selected':''}>${escapeHtml(t('insp.imgFitContain'))}</option>
+              <option value="cover" ${w.image_fit==='cover'?'selected':''}>${escapeHtml(t('insp.imgFitCover'))}</option>
+            </select>
+          </label>
+          <label class="field full">${escapeHtml(t('insp.imgTriggerTopic'))}
+            <input type="text" list="knownTopics" value="${escapeAttr(w.image_trigger_topic || '')}" placeholder="cam/doorbell/ring" oninput="_setW('image_trigger_topic', this.value)" />
+          </label>
+          <div class="full">
+            <label class="check-row"><input type="checkbox" ${ditherOn ? 'checked' : ''} onchange="_setW('image_dither', this.checked)" /> ${escapeHtml(t('insp.imgDither'))}</label>
+          </div>
+          <label class="field">${escapeHtml(t('insp.imgAuthUser'))}
+            <input type="text" value="${escapeAttr(w.image_auth_user || '')}" oninput="_setW('image_auth_user', this.value)" />
+          </label>
+          <label class="field">${escapeHtml(t('insp.imgAuthPass'))}
+            <input type="password" value="${escapeAttr(w.image_auth_pass || '')}" oninput="_setW('image_auth_pass', this.value)" />
+          </label>
+        `;
       }
 
       const brokers = getAllBrokers();
@@ -2235,6 +3311,9 @@
               <option value="sun" ${w.icon==='sun'?'selected':''}>${escapeHtml(t('icon.sun'))}</option>
               <option value="clock" ${w.icon==='clock'?'selected':''}>${escapeHtml(t('icon.clock'))}</option>
               <option value="calendar" ${w.icon==='calendar'?'selected':''}>${escapeHtml(t('icon.calendar'))}</option>
+              <option value="bluetooth" ${w.icon==='bluetooth'?'selected':''}>${escapeHtml(t('icon.bluetooth'))}</option>
+              <option value="checklist" ${w.icon==='checklist'?'selected':''}>${escapeHtml(t('icon.checklist'))}</option>
+              <option value="image" ${w.icon==='image'?'selected':''}>${escapeHtml(t('icon.image'))}</option>
               <option value="power" ${w.icon==='power'?'selected':''}>${escapeHtml(t('icon.power'))}</option>
             </select>
           </label>
@@ -2243,18 +3322,86 @@
               ${brokerOptions}
             </select>
           </label>
-          ${!isFP ? `
-            <label class="field">${escapeHtml(t('insp.subtitle'))}
+          ${!isFP ? (() => {
+            const page = cfg.pages[activePageIdx];
+            const cols = Math.max(1, Math.min(6, page.columns || 2));
+            const fixedRows = Math.max(0, Math.min(6, page.rows || 0));
+            const maxRowOpt = fixedRows > 0 ? fixedRows : 6;
+            const layout = computeGridLayout(page.widgets || [], cols, fixedRows);
+            const curPos = layout.placed[selectedWidgetIdx] || { col: 0, row: 0, span: w.span || 1, rowSpan: w.row_span || 1 };
+
+            window._setGridSpan = (val) => {
+              const sw = Math.max(1, Math.min(parseInt(val, 10) || 1, cols));
+              w.span = sw;
+              if (Number.isInteger(w.grid_col) && Number.isInteger(w.grid_row)) {
+                w.grid_col = Math.max(0, Math.min(w.grid_col, cols - sw));
+                unpinColliders(page, selectedWidgetIdx, w.grid_col, w.grid_row, sw, Math.min(w.row_span || 1, maxRowOpt));
+              }
+              markDirty(true);
+              renderDesigner();
+            };
+            window._setGridRowSpan = (val) => {
+              const sh = Math.max(1, Math.min(parseInt(val, 10) || 1, maxRowOpt));
+              if (sh > 1) w.row_span = sh;
+              else delete w.row_span;
+              if (Number.isInteger(w.grid_col) && Number.isInteger(w.grid_row)) {
+                unpinColliders(page, selectedWidgetIdx, w.grid_col, w.grid_row, Math.min(w.span || 1, cols), sh);
+              }
+              markDirty(true);
+              renderDesigner();
+            };
+            window._setGridCoord = (axis, raw) => {
+              const n = parseInt(raw, 10);
+              if (!Number.isFinite(n)) {
+                delete w.grid_col;
+                delete w.grid_row;
+              } else {
+                const sw = Math.max(1, Math.min(w.span || 1, cols));
+                const sh = Math.max(1, Math.min(w.row_span || 1, maxRowOpt));
+                let gc = Number.isInteger(w.grid_col) ? w.grid_col : curPos.col;
+                let gr = Number.isInteger(w.grid_row) ? w.grid_row : curPos.row;
+                if (axis === 'col') gc = Math.max(0, Math.min(n - 1, cols - sw));
+                else gr = Math.max(0, n - 1);
+                w.grid_col = gc;
+                w.grid_row = gr;
+                unpinColliders(page, selectedWidgetIdx, gc, gr, sw, sh);
+              }
+              markDirty(true);
+              renderDesigner();
+            };
+
+            const colOpts = [];
+            for (let c = 1; c <= cols; c++) {
+              colOpts.push(`<option value="${c}" ${Math.min(w.span||1, cols)===c?'selected':''}>${escapeHtml(t('insp.colsUnit', { n: c }))}</option>`);
+            }
+            const rowOpts = [];
+            for (let r = 1; r <= maxRowOpt; r++) {
+              rowOpts.push(`<option value="${r}" ${Math.min(w.row_span||1, maxRowOpt)===r?'selected':''}>${escapeHtml(t('insp.rowsUnit', { n: r }))}</option>`);
+            }
+            const colPosOpts = [`<option value="">${escapeHtml(t('insp.gridPosAuto'))}</option>`];
+            for (let c = 1; c <= cols; c++) {
+              colPosOpts.push(`<option value="${c}" ${Number.isInteger(w.grid_col) && (w.grid_col+1)===c ? 'selected' : ''}>${c}</option>`);
+            }
+
+            return `
+            <label class="field full">${escapeHtml(t('insp.subtitle'))}
               <input type="text" value="${escapeAttr(w.subtitle || '')}" oninput="_setW('subtitle', this.value)" />
             </label>
             <label class="field">${escapeHtml(t('insp.span'))}
-              <select onchange="_setW('span', parseInt(this.value,10))">
-                <option value="1" ${(w.span||1)===1?'selected':''}>${escapeHtml(t('insp.span1'))}</option>
-                <option value="2" ${w.span===2?'selected':''}>${escapeHtml(t('insp.span2'))}</option>
-                <option value="3" ${w.span===3?'selected':''}>${escapeHtml(t('insp.span3'))}</option>
-              </select>
+              <select onchange="_setGridSpan(this.value)">${colOpts.join('')}</select>
             </label>
-          ` : `
+            <label class="field">${escapeHtml(t('insp.rowSpan'))}
+              <select onchange="_setGridRowSpan(this.value)">${rowOpts.join('')}</select>
+            </label>
+            <div class="field full">
+              <span>${escapeHtml(t('insp.gridPos'))}</span>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <select style="flex:1;" onchange="_setGridCoord('col', this.value)">${colPosOpts.join('')}</select>
+                <input style="flex:1;" type="number" min="1" max="20" placeholder="${escapeAttr(t('insp.gridPosAuto'))}" value="${Number.isInteger(w.grid_row) ? (w.grid_row+1) : ''}" onchange="_setGridCoord('row', this.value)" />
+                <button type="button" class="secondary sm" onclick="_setGridCoord('clear', '')">${escapeHtml(t('insp.gridPosAuto'))}</button>
+              </div>
+            </div>`;
+          })() : `
             <label class="field">${escapeHtml(t('insp.posX'))}
               <input type="number" min="0" max="1000" value="${tgt.pin.x}" oninput="cfg.pages[activePageIdx].floorplan.pins[${selectedPinIdx}].x=parseInt(this.value,10)||0; markDirty(true); renderFloorplanSVG();" />
             </label>
@@ -2633,6 +3780,8 @@
           hkPill.className = 'pill dirty';
         }
       }
+      renderBLEStatus(data.ble);
+      renderExtraStatusUI(data);
       const pill = document.getElementById('mqttStatus');
       const totalN = data.mqtt_total_n || 1;
       const connN = data.mqtt_connected_n ?? (data.mqtt_connected ? 1 : 0);
@@ -2676,6 +3825,317 @@
 
       liveTopicRows = rows;
       renderTopicsList();
+    }
+
+    function renderBatteryWidgetSelect() {
+      const sel = document.getElementById('bg_widget_id');
+      if (!sel || !cfg) return;
+      const cur = cfg.battery_guard?.widget_id || '';
+      const sws = collectAllSwitches();
+      sel.innerHTML = [`<option value="">${escapeHtml(t('set.bgNoneOpt'))}</option>`]
+        .concat(sws.map(sw => `<option value="${escapeAttr(sw.id)}" ${sw.id===cur?'selected':''}>${escapeHtml(sw.name)}</option>`))
+        .join('');
+    }
+
+    function renderRulesList() {
+      const box = document.getElementById('rulesList');
+      if (!box || !cfg) return;
+      cfg.rules = cfg.rules || [];
+      if (cfg.rules.length === 0) {
+        box.innerHTML = `<div class="hint">${escapeHtml(t('set.rulesEmpty'))}</div>`;
+        return;
+      }
+      const switches = collectAllSwitches();
+      const pages = cfg.pages || [];
+      const triggers = ['ble_near', 'ble_away', 'topic_eq', 'topic_gt', 'topic_lt', 'time'];
+      const actions = ['widget', 'mqtt', 'webhook', 'page', 'notify', 'brightness', 'standby'];
+
+      box.innerHTML = cfg.rules.map((r, i) => {
+        const trigOpts = triggers.map(tr => `<option value="${tr}" ${r.trigger===tr?'selected':''}>${escapeHtml(t('trig.'+tr))}</option>`).join('');
+        const actOpts = actions.map(a => `<option value="${a}" ${r.action_type===a?'selected':''}>${escapeHtml(t('act.'+a))}</option>`).join('');
+
+        let trigFields = '';
+        if (r.trigger === 'ble_near' || r.trigger === 'ble_away') {
+          trigFields = `<label class="field">${escapeHtml(t('set.rulesDevFilter'))}
+            <input type="text" value="${escapeAttr(r.device_name || '')}" placeholder="Apple Watch" oninput="cfg.rules[${i}].device_name=this.value; markDirty(true);" />
+          </label>`;
+        } else if (r.trigger === 'topic_eq' || r.trigger === 'topic_gt' || r.trigger === 'topic_lt') {
+          trigFields = `
+            <label class="field">${escapeHtml(t('set.rulesTopic'))}
+              <input type="text" list="knownTopics" value="${escapeAttr(r.topic || '')}" placeholder="zigbee2mqtt/door" oninput="cfg.rules[${i}].topic=this.value; markDirty(true);" />
+            </label>
+            <label class="field">${escapeHtml(t('set.rulesJsonPath'))}
+              <input type="text" value="${escapeAttr(r.json_path || '')}" placeholder="$.contact" oninput="cfg.rules[${i}].json_path=this.value; markDirty(true);" />
+            </label>
+            ${r.trigger === 'topic_eq'
+              ? `<label class="field">${escapeHtml(t('set.rulesValue'))}<input type="text" value="${escapeAttr(r.value || '')}" placeholder="ON" oninput="cfg.rules[${i}].value=this.value; markDirty(true);" /></label>`
+              : `<label class="field">${escapeHtml(t('set.rulesThreshold'))}<input type="number" step="any" value="${r.threshold ?? 0}" oninput="cfg.rules[${i}].threshold=parseFloat(this.value)||0; markDirty(true);" /></label>`}
+          `;
+        } else if (r.trigger === 'time') {
+          const hh = String(r.hour ?? 7).padStart(2, '0');
+          const mm = String(r.minute ?? 0).padStart(2, '0');
+          trigFields = `<label class="field">${escapeHtml(t('trig.time'))}
+            <input type="time" value="${hh}:${mm}" onchange="const p=this.value.split(':'); cfg.rules[${i}].hour=parseInt(p[0],10)||0; cfg.rules[${i}].minute=parseInt(p[1],10)||0; markDirty(true);" />
+          </label>`;
+        }
+
+        let actFields = '';
+        if (r.action_type === 'widget' || !r.action_type) {
+          const swOpts = switches.map(sw => `<option value="${escapeAttr(sw.id)}" ${r.widget_id===sw.id?'selected':''}>${escapeHtml(sw.name)}</option>`).join('');
+          actFields = `
+            <label class="field">${escapeHtml(t('set.rulesTargetWidget'))}
+              <select onchange="cfg.rules[${i}].widget_id=this.value; markDirty(true);">${swOpts || `<option value="">${escapeHtml(t('insp.noSwitchOpt'))}</option>`}</select>
+            </label>
+            <label class="field">${escapeHtml(t('set.schedAction'))}
+              <select onchange="cfg.rules[${i}].state=this.value; markDirty(true);">
+                <option value="ON" ${(!r.state||r.state==='ON')?'selected':''}>ON</option>
+                <option value="OFF" ${r.state==='OFF'?'selected':''}>OFF</option>
+                <option value="TOGGLE" ${r.state==='TOGGLE'?'selected':''}>TOGGLE</option>
+              </select>
+            </label>`;
+        } else if (r.action_type === 'mqtt') {
+          actFields = `
+            <label class="field">${escapeHtml(t('set.schedTopic'))}
+              <input type="text" list="knownTopics" value="${escapeAttr(r.action_topic || '')}" oninput="cfg.rules[${i}].action_topic=this.value; markDirty(true);" />
+            </label>
+            <label class="field">${escapeHtml(t('set.schedPayload'))}
+              <input type="text" value="${escapeAttr(r.action_payload || '')}" oninput="cfg.rules[${i}].action_payload=this.value; markDirty(true);" />
+            </label>`;
+        } else if (r.action_type === 'webhook') {
+          actFields = `
+            <label class="field full">${escapeHtml(t('insp.hookUrl'))}
+              <input type="text" value="${escapeAttr(r.webhook_url || '')}" placeholder="http://192.168.1.50/..." oninput="cfg.rules[${i}].webhook_url=this.value; markDirty(true);" />
+            </label>
+            <label class="field">${escapeHtml(t('insp.hookMethod'))}
+              <select onchange="cfg.rules[${i}].webhook_method=this.value; markDirty(true);">
+                <option value="" ${!r.webhook_method?'selected':''}>Auto</option>
+                <option value="GET" ${r.webhook_method==='GET'?'selected':''}>GET</option>
+                <option value="POST" ${r.webhook_method==='POST'?'selected':''}>POST</option>
+              </select>
+            </label>
+            <label class="field">${escapeHtml(t('insp.hookBody'))}
+              <input type="text" value="${escapeAttr(r.webhook_body || '')}" oninput="cfg.rules[${i}].webhook_body=this.value; markDirty(true);" />
+            </label>`;
+        } else if (r.action_type === 'page') {
+          const pgOpts = pages.map(pg => `<option value="${escapeAttr(pg.id)}" ${r.target_page===pg.id?'selected':''}>${escapeHtml(pg.title || pg.id)}</option>`).join('');
+          actFields = `<label class="field full">${escapeHtml(t('set.rulesTargetPage'))}
+            <select onchange="cfg.rules[${i}].target_page=this.value; markDirty(true);">${pgOpts}</select>
+          </label>`;
+        } else if (r.action_type === 'notify') {
+          actFields = `<label class="field full">${escapeHtml(t('set.rulesNotifyText'))}
+            <input type="text" value="${escapeAttr(r.notify_text || '')}" oninput="cfg.rules[${i}].notify_text=this.value; markDirty(true);" />
+          </label>`;
+        } else if (r.action_type === 'brightness') {
+          actFields = `<label class="field">${escapeHtml(t('set.rulesBrightness'))}
+            <input type="number" min="0" max="24" value="${r.brightness ?? 14}" oninput="cfg.rules[${i}].brightness=parseInt(this.value,10)||0; markDirty(true);" />
+          </label>`;
+        } else if (r.action_type === 'standby') {
+          actFields = `<label class="field full">${escapeHtml(t('set.rulesStandbyMode'))}
+            <select onchange="cfg.rules[${i}].standby_active=(this.value==='true'); markDirty(true);">
+              <option value="false" ${!r.standby_active?'selected':''}>${escapeHtml(t('set.rulesStandbyExit'))}</option>
+              <option value="true" ${r.standby_active?'selected':''}>${escapeHtml(t('set.rulesStandbyEnter'))}</option>
+            </select>
+          </label>`;
+        }
+
+        return `
+          <div style="border:1px solid #d0d5dd; border-radius:8px; padding:10px; background:#f8f9fa;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+              <label class="check-row" style="margin:0; flex:1;">
+                <input type="checkbox" ${r.enabled!==false?'checked':''} onchange="cfg.rules[${i}].enabled=this.checked; markDirty(true);" />
+                <input type="text" value="${escapeAttr(r.name || '')}" placeholder="${escapeAttr(t('set.rulesNamePh'))}" oninput="cfg.rules[${i}].name=this.value; markDirty(true);" />
+              </label>
+              <button type="button" class="danger sm" onclick="deleteRule(${i})">✕</button>
+            </div>
+            <div class="form-grid">
+              <label class="field">${escapeHtml(t('set.rulesTrigger'))}
+                <select onchange="cfg.rules[${i}].trigger=this.value; markDirty(true); renderRulesList();">${trigOpts}</select>
+              </label>
+              <label class="field">${escapeHtml(t('set.rulesAction'))}
+                <select onchange="cfg.rules[${i}].action_type=this.value; markDirty(true); renderRulesList();">${actOpts}</select>
+              </label>
+              ${trigFields}
+              ${actFields}
+              <label class="field">${escapeHtml(t('set.rulesHourFrom'))}
+                <input type="number" min="0" max="23" value="${r.hour_from ?? ''}" placeholder="0–23" oninput="cfg.rules[${i}].hour_from=(this.value===''?undefined:parseInt(this.value,10)); markDirty(true);" />
+              </label>
+              <label class="field">${escapeHtml(t('set.rulesHourTo'))}
+                <input type="number" min="0" max="23" value="${r.hour_to ?? ''}" placeholder="0–23" oninput="cfg.rules[${i}].hour_to=(this.value===''?undefined:parseInt(this.value,10)); markDirty(true);" />
+              </label>
+              <label class="field">${escapeHtml(t('set.rulesCooldown'))}
+                <input type="number" min="1" max="86400" value="${r.cooldown_sec ?? 10}" oninput="cfg.rules[${i}].cooldown_sec=parseInt(this.value,10)||10; markDirty(true);" />
+              </label>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function addRule() {
+      if (!cfg) return;
+      cfg.rules = cfg.rules || [];
+      const sws = collectAllSwitches();
+      cfg.rules.push({
+        id: 'rule_' + Math.random().toString(36).slice(2, 7),
+        name: t('set.rulesNewName'),
+        enabled: true,
+        trigger: 'ble_near',
+        action_type: sws.length ? 'widget' : 'notify',
+        widget_id: sws.length ? sws[0].id : '',
+        state: 'ON',
+        notify_text: 'Welcome home!',
+        cooldown_sec: 15
+      });
+      markDirty(true);
+      renderRulesList();
+    }
+
+    function deleteRule(idx) {
+      cfg.rules.splice(idx, 1);
+      markDirty(true);
+      renderRulesList();
+    }
+
+    async function importConfigFile(input) {
+      const msg = document.getElementById('importCfgMsg');
+      const file = input.files?.[0];
+      input.value = '';
+      if (!file) return;
+      const text = await file.text();
+      const res = await fetch('/api/config/import', { method: 'POST', body: text });
+      if (res.ok) {
+        if (msg) { msg.textContent = t('set.backupImportOk'); msg.style.color = '#15803d'; }
+        await loadConfigJSON();
+        setTimeout(refreshScreen, 250);
+      } else {
+        if (msg) { msg.textContent = t('hdr.error') + await res.text(); msg.style.color = '#b91c1c'; }
+      }
+    }
+
+    async function uploadOTABinary() {
+      const inp = document.getElementById('otaBinaryFile');
+      const msg = document.getElementById('otaMsg');
+      const file = inp?.files?.[0];
+      if (!file) {
+        if (msg) { msg.textContent = t('set.otaNoFile'); msg.style.color = '#b91c1c'; }
+        return;
+      }
+      if (!confirm(t('set.otaConfirm'))) return;
+      if (msg) { msg.textContent = t('set.otaUploading'); msg.style.color = '#111'; }
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/ota/upload', { method: 'POST', body: fd });
+      if (!res.ok) {
+        if (msg) { msg.textContent = t('hdr.error') + await res.text(); msg.style.color = '#b91c1c'; }
+        return;
+      }
+      if (msg) { msg.textContent = t('set.otaRestarting'); msg.style.color = '#15803d'; }
+      setTimeout(() => {
+        const iv = setInterval(async () => {
+          try {
+            const p = await fetch('/api/status');
+            if (p.ok) {
+              clearInterval(iv);
+              if (msg) msg.textContent = t('set.otaReconnected');
+              loadConfigJSON();
+              pollStatus();
+            }
+          } catch (_) {}
+        }, 1200);
+      }, 2200);
+    }
+
+    function copyShortcutUrl(txt, btn) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(() => {
+          const old = btn.textContent;
+          btn.textContent = t('set.scCopied');
+          setTimeout(() => { btn.textContent = t('set.scCopy'); }, 1500);
+        }).catch(() => {});
+      }
+    }
+
+    function renderShortcutsRef() {
+      const box = document.getElementById('shortcutsApiBox');
+      if (!box) return;
+      const base = window.location.origin;
+      const firstPageId = cfg?.pages?.[0]?.id || 'home';
+      const firstChkId = (cfg?.pages || []).flatMap(p => p.widgets || []).find(w => w.type === 'checklist')?.id || 'chk1';
+      const eps = [
+        { lbl: 'Banner Notification', url: `${base}/api/notify?text=Hotovo&duration_sec=20` },
+        { lbl: 'Switch Kindle Page', url: `${base}/api/page?page=${encodeURIComponent(firstPageId)}` },
+        { lbl: 'Standby ON/OFF/Toggle', url: `${base}/api/standby?active=toggle` },
+        { lbl: 'Backlight (0–24)', url: `${base}/api/brightness?level=16` },
+        { lbl: 'Add Checklist Item', url: `${base}/api/checklist`, body: `{"action":"add","widget_id":"${firstChkId}","text":"Mléko"}` },
+        { lbl: 'Trigger Switch/Button', url: `${base}/api/widget/trigger`, body: `{"widget_id":"living_lamp","state":"TOGGLE"}` },
+      ];
+      box.innerHTML = eps.map((e, i) => `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; background:#fff; border:1px solid #e5e7eb; border-radius:6px; padding:5px 8px;">
+          <div style="min-width:0; flex:1;">
+            <strong>${escapeHtml(e.lbl)}:</strong>
+            <code style="word-break:break-all;">${escapeHtml(e.url)}</code>
+            ${e.body ? `<span class="hint"> POST ${escapeHtml(e.body)}</span>` : ''}
+          </div>
+          <button type="button" class="secondary sm" onclick="copyShortcutUrl('${escapeAttr(e.url)}', this)">${escapeHtml(t('set.scCopy'))}</button>
+        </div>
+      `).join('');
+    }
+
+    function renderExtraStatusUI(data) {
+      const bg = data.battery_guard || {};
+      const bgPill = document.getElementById('bgStatusPill');
+      if (bgPill) {
+        if (!bg.enabled) {
+          bgPill.textContent = t('set.bgStOff');
+          bgPill.className = 'pill';
+        } else if (bg.state === 'charging_requested') {
+          bgPill.textContent = t('set.bgStCharging', { bat: bg.battery ?? '?' });
+          bgPill.className = 'pill dirty';
+        } else if (bg.state === 'cutoff_requested') {
+          bgPill.textContent = t('set.bgStCutoff', { bat: bg.battery ?? '?' });
+          bgPill.className = 'pill ok';
+        } else if (bg.state === 'unknown') {
+          bgPill.textContent = t('set.bgStUnk');
+          bgPill.className = 'pill';
+        } else {
+          bgPill.textContent = t('set.bgStOk', { bat: bg.battery ?? '?' });
+          bgPill.className = 'pill ok';
+        }
+      }
+
+      const sp = data.spot || {};
+      const spPill = document.getElementById('spotStatusPill');
+      if (spPill) {
+        if (!sp.enabled) {
+          spPill.textContent = t('set.spotStOff');
+          spPill.className = 'pill';
+        } else if (!sp.available || !sp.current) {
+          spPill.textContent = sp.last_error || t('set.spotStLoad');
+          spPill.className = sp.last_error ? 'pill err' : 'pill dirty';
+        } else {
+          const val = sp.currency === 'EUR' ? Math.round(sp.current.price_eur) : sp.current.price_czk.toFixed(2);
+          spPill.textContent = t('set.spotStLive', { v: val, u: sp.unit || '' });
+          spPill.className = sp.current.level === 'high' ? 'pill err' : (sp.current.level === 'low' ? 'pill ok' : 'pill dirty');
+        }
+      }
+
+      const otaHint = document.getElementById('otaHintText');
+      if (otaHint) {
+        otaHint.textContent = t('set.otaHint', { arch: data.arch || 'arm' });
+      }
+
+      const logsBox = document.getElementById('rulesLogBox');
+      if (logsBox) {
+        const logs = data.rules_log || [];
+        if (logs.length === 0) {
+          logsBox.innerHTML = `<div class="hint">${escapeHtml(t('set.rulesNoLogs'))}</div>`;
+        } else {
+          logsBox.innerHTML = logs.slice(0, 10).map(l => {
+            const tm = l.at ? new Date(l.at).toLocaleTimeString() : '';
+            return `<div style="padding:2px 0; border-bottom:1px solid #eee;"><strong>${escapeHtml(tm)}</strong> — ${escapeHtml(l.rule_name || l.rule_id)} (<code>${escapeHtml(l.trigger)}</code> → ${escapeHtml(l.action)})</div>`;
+          }).join('');
+        }
+      }
     }
 
     async function pollStatus() {

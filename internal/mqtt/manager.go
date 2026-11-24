@@ -195,6 +195,14 @@ func (m *Manager) PublishTelemetry(battery int, charging bool, ip string, bright
 	}
 }
 
+// PublishPresence publishes BLE proximity presence to the primary broker.
+func (m *Manager) PublishPresence(present bool, device string, rssi int) {
+	cl, _ := m.resolveClient("")
+	if cl != nil {
+		cl.PublishPresence(present, device, rssi)
+	}
+}
+
 // Snapshot returns per-broker status and combined summary across all MQTT instances.
 func (m *Manager) Snapshot() ManagerSnapshot {
 	m.mu.RLock()

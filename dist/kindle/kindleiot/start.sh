@@ -16,7 +16,12 @@ if [ -f "$PIDFILE" ]; then
   OLD_PID="$(cat "$PIDFILE" 2>/dev/null || true)"
   if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
     kill "$OLD_PID" 2>/dev/null || true
-    sleep 1
+    for _ in 1 2 3 4 5 6; do
+      if ! kill -0 "$OLD_PID" 2>/dev/null; then
+        break
+      fi
+      sleep 0.5
+    done
   fi
 fi
 

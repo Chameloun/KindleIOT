@@ -16,6 +16,7 @@ import (
 	"github.com/brutella/hap"
 	"github.com/brutella/hap/accessory"
 	"github.com/brutella/hap/characteristic"
+	"github.com/brutella/hap/service"
 
 	"kindleiot/internal/config"
 	"kindleiot/internal/mqtt"
@@ -43,16 +44,18 @@ type boundTemp struct {
 
 // Bridge exposes user-selected KindleIOT widgets (where widget.HomeKit == true) to Apple Home via HAP.
 type Bridge struct {
-	mu        sync.Mutex
-	cfg       *config.Config
-	mq        *mqtt.Manager
-	onUpdate  func()
-	server    *hap.Server
-	cancel    context.CancelFunc
-	doneCh    chan struct{}
-	switches  []boundSwitch
-	temps     []boundTemp
-	signature string
+	mu            sync.Mutex
+	cfg           *config.Config
+	mq            *mqtt.Manager
+	onUpdate      func()
+	server        *hap.Server
+	cancel        context.CancelFunc
+	doneCh        chan struct{}
+	switches      []boundSwitch
+	temps         []boundTemp
+	occupancy     *service.OccupancySensor
+	lastOccupancy bool
+	signature     string
 }
 
 // NewBridge creates a new HomeKit Bridge manager.
@@ -102,7 +105,8 @@ func buildHomeKitSignature(cfg *config.Config) string {
 		return "disabled"
 	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%s|%d|%s|", cfg.HomeKit.Pin, cfg.HomeKit.Port, cfg.HomeKit.StoreDir)
+	fmt.Fprintf(&sb, "%s|%d|%s|ble_occ=%v|", cfg.HomeKit.Pin, cfg.HomeKit.Port, cfg.HomeKit.StoreDir,
+		cfg.Bluetooth.Enabled && cfg.Bluetooth.HomeKitOccupancy)
 	seen := make(map[string]bool)
 	addW := func(w config.WidgetConfig) {
 		if !w.HomeKit || w.ID == "" || seen[w.ID] {
@@ -191,6 +195,7 @@ func (b *Bridge) startLocked() ([]seedTopic, error) {
 
 	b.switches = nil
 	b.temps = nil
+	b.occupancy = nil
 	var children []*accessory.A
 	seenWidgets := make(map[string]bool)
 
@@ -279,6 +284,25 @@ func (b *Bridge) startLocked() ([]seedTopic, error) {
 				addWidget(pin.Widget)
 			}
 		}
+	}
+
+	if b.cfg.Bluetooth.Enabled && b.cfg.Bluetooth.HomeKitOccupancy {
+		occAcc := accessory.New(accessory.Info{
+			Name:         b.cfg.Device.Title + " Presence",
+			Manufacturer: "KindleIOT",
+			Model:        "BLE Proximity",
+			SerialNumber: "KINDLEIOT-BLE-OCC",
+		}, accessory.TypeSensor)
+		occAcc.Id = allocID("__ble_occupancy__")
+		occSvc := service.NewOccupancySensor()
+		val := characteristic.OccupancyDetectedOccupancyNotDetected
+		if b.lastOccupancy {
+			val = characteristic.OccupancyDetectedOccupancyDetected
+		}
+		occSvc.OccupancyDetected.SetValue(val)
+		occAcc.AddS(occSvc.S)
+		b.occupancy = occSvc
+		children = append(children, occAcc)
 	}
 
 	store := hap.NewFsStore(b.cfg.HomeKit.StoreDir)
@@ -463,16 +487,38 @@ func (b *Bridge) ResetPairings() error {
 	return err
 }
 
+// SetOccupancy updates the HomeKit OccupancySensor state for BLE proximity detection.
+func (b *Bridge) SetOccupancy(present bool) {
+	b.mu.Lock()
+	b.lastOccupancy = present
+	occ := b.occupancy
+	b.mu.Unlock()
+	if occ == nil {
+		return
+	}
+	target := characteristic.OccupancyDetectedOccupancyNotDetected
+	if present {
+		target = characteristic.OccupancyDetectedOccupancyDetected
+	}
+	if occ.OccupancyDetected.Value() != target {
+		occ.OccupancyDetected.SetValue(target)
+	}
+}
+
 // Status returns current HomeKit pairing and runtime status.
 func (b *Bridge) Status() Status {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	accCount := len(b.switches) + len(b.temps)
+	if b.occupancy != nil {
+		accCount++
+	}
 	st := Status{
 		Enabled:     b.cfg.HomeKit.Enabled,
 		Running:     b.server != nil,
 		Pin:         b.cfg.HomeKit.Pin,
 		Port:        b.cfg.HomeKit.Port,
-		Accessories: len(b.switches) + len(b.temps),
+		Accessories: accCount,
 	}
 	if b.server != nil {
 		st.Paired = b.server.IsPaired()

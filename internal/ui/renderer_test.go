@@ -1,21 +1,27 @@
 package ui
 
 import (
+	"bytes"
 	"fmt"
 	"image"
+	"image/color"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"kindleiot/internal/calendar"
+	"kindleiot/internal/checklist"
 	"kindleiot/internal/config"
+	"kindleiot/internal/imgfetch"
 	"kindleiot/internal/kindle"
 	"kindleiot/internal/mqtt"
+	"kindleiot/internal/spot"
 	"kindleiot/internal/weather"
 )
 
@@ -1198,5 +1204,350 @@ func TestRendererHiddenPagesAndOrdering(t *testing.T) {
 		if h.Type == ActionSelectPage {
 			t.Fatalf("expected zero tab hits when all pages are hidden, got %+v", h)
 		}
+	}
+}
+
+func TestRenderBLEPresenceWidgetWithBluetoothIcon(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Device.Language = "cs"
+	cfg.Pages = []config.PageConfig{
+		{
+			ID:      "p1",
+			Title:   "Přehled",
+			Columns: 2,
+			Widgets: []config.WidgetConfig{
+				{
+					ID:             "ble_pres",
+					Type:           "sensor",
+					Label:          "Přítomnost",
+					Subtitle:       "Bluetooth",
+					Icon:           "bluetooth",
+					StateTopic:     "local/ble/presence",
+					ValueMap:       map[string]string{"ON": "Blízko", "OFF": "Pryč"},
+					SecondaryTopic: "local/ble/rssi",
+					SecondaryUnit:  " dBm",
+					ShowInStandby:  true,
+				},
+			},
+		},
+	}
+	if err := cfg.NormalizeAndValidate(); err != nil {
+		t.Fatalf("NormalizeAndValidate failed: %v", err)
+	}
+	mq := mqtt.NewManager(cfg, nil, mqtt.CommandHandler{})
+	mq.SetLocalValue("", "local/ble/presence", "ON")
+	mq.SetLocalValue("", "local/ble/rssi", "-48")
+
+	r, err := NewRenderer(cfg, mq, &kindle.System{}, Controller{})
+	if err != nil {
+		t.Fatalf("NewRenderer failed: %v", err)
+	}
+	img, _ := r.Render()
+	if img == nil || img.Bounds().Dx() != 600 || img.Bounds().Dy() != 800 {
+		t.Fatalf("unexpected rendered image bounds: %v", img.Bounds())
+	}
+	nonWhite := 0
+	for _, px := range img.Pix {
+		if px != 0xFF {
+			nonWhite++
+		}
+	}
+	if nonWhite == 0 {
+		t.Fatalf("expected non-white rendered pixels on BLE presence card")
+	}
+}
+
+func TestLayoutGrid2DPackingAndExplicitPlacement(t *testing.T) {
+	// Scenario 1: 3x3 grid with one 2x3 block + three 1x1 tiles -> three tiles fill column 2 vertically.
+	widgets := []config.WidgetConfig{
+		{ID: "big", Type: "calendar", Label: "Big", Span: 2, RowSpan: 3},
+		{ID: "t1", Type: "switch", Label: "T1", Span: 1},
+		{ID: "t2", Type: "switch", Label: "T2", Span: 1},
+		{ID: "t3", Type: "switch", Label: "T3", Span: 1},
+	}
+	placed, totalRows := layoutGrid(widgets, 3, 3)
+	if totalRows != 3 {
+		t.Fatalf("expected totalRows=3, got %d", totalRows)
+	}
+	if placed[0].col != 0 || placed[0].row != 0 || placed[0].span != 2 || placed[0].rowSpan != 3 {
+		t.Fatalf("unexpected big placement: %+v", placed[0])
+	}
+	for i := 1; i <= 3; i++ {
+		if placed[i].col != 2 || placed[i].row != i-1 {
+			t.Fatalf("expected t%d at col=2 row=%d, got %+v", i, i-1, placed[i])
+		}
+	}
+
+	// Scenario 2: explicit bottom-right 2x2 block + collision displacement + sub-page boundary skip.
+	widgets2 := []config.WidgetConfig{
+		{ID: "pin_br", Type: "chart", Label: "BottomRight", Span: 2, RowSpan: 2, GridCol: config.IntPtr(1), GridRow: config.IntPtr(1)},
+		{ID: "collide", Type: "switch", Label: "Colliding", Span: 1, RowSpan: 1, GridCol: config.IntPtr(2), GridRow: config.IntPtr(2)},
+		{ID: "tall_next", Type: "sensor", Label: "TallNext", Span: 1, RowSpan: 3},
+	}
+	placed2, totalRows2 := layoutGrid(widgets2, 3, 3)
+	if placed2[0].col != 1 || placed2[0].row != 1 {
+		t.Fatalf("expected pinned block at (1,1), got %+v", placed2[0])
+	}
+	if placed2[1].col != 0 || placed2[1].row != 0 {
+		t.Fatalf("expected colliding tile displaced to first free cell (0,0), got %+v", placed2[1])
+	}
+	// Column 0 has row 1 and 2 free, not 3 contiguous rows inside sub-page 0 (0..2), so 1x3 pushes cleanly to row=3.
+	if placed2[2].row != 3 || placed2[2].rowSpan != 3 {
+		t.Fatalf("expected 1x3 card not to split across sub-page boundary (row=3), got %+v", placed2[2])
+	}
+	if totalRows2 != 6 {
+		t.Fatalf("expected totalRows=6, got %d", totalRows2)
+	}
+}
+
+func TestRenderStretchedBlocks3x3And2x3(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Calendar.Enabled = true
+	cfg.Pages = []config.PageConfig{
+		{
+			ID:      "p3x3",
+			Title:   "3x3",
+			Columns: 3,
+			Rows:    3,
+			Widgets: []config.WidgetConfig{
+				{ID: "cal23", Type: "calendar", Label: "Schedule", Span: 2, RowSpan: 3},
+				{ID: "sw1", Type: "switch", Label: "Light", Span: 1},
+				{ID: "sen1", Type: "sensor", Label: "Temp", StateTopic: "t/1", Unit: "°C", Span: 1},
+				{ID: "wx1", Type: "weather", Label: "Weather", Span: 1},
+			},
+		},
+		{
+			ID:      "full3x3",
+			Title:   "BigChart",
+			Columns: 3,
+			Rows:    3,
+			Widgets: []config.WidgetConfig{
+				{ID: "ch33", Type: "chart", Label: "Power", StateTopic: "t/pow", Unit: "W", Span: 3, RowSpan: 3},
+			},
+		},
+	}
+	if err := cfg.NormalizeAndValidate(); err != nil {
+		t.Fatalf("NormalizeAndValidate failed: %v", err)
+	}
+	mq := mqtt.NewManager(cfg, nil, mqtt.CommandHandler{})
+	mq.SetLocalValue("", "t/1", "21.4")
+	mq.SetLocalValue("", "t/pow", "420")
+	mq.SetLocalValue("", "t/pow", "510")
+
+	r, err := NewRenderer(cfg, mq, &kindle.System{}, Controller{})
+	if err != nil {
+		t.Fatalf("NewRenderer failed: %v", err)
+	}
+	img1, _ := r.Render()
+	if img1 == nil {
+		t.Fatalf("expected non-nil 3x3 image")
+	}
+
+	// Tap Switch card at col=2, row=0 -> verifies full hit box was registered and switches state ON.
+	swX, swY, ok := findHitCenter(r, ActionWidgetToggle)
+	if !ok {
+		t.Fatalf("expected hit rect for switch tile on 3x3 grid")
+	}
+	if swX < 380 || swY > 300 {
+		t.Fatalf("expected col=2 row=0 switch coordinates in upper-right cell, got (%d,%d)", swX, swY)
+	}
+	if !r.HandleTap(swX, swY) {
+		t.Fatalf("expected switch tap on 3x3 grid to succeed")
+	}
+
+	// Switch to page 1 containing full-screen 3x3 Chart and render cleanly.
+	r.mu.Lock()
+	r.activePage = 1
+	r.mu.Unlock()
+	img2, _ := r.Render()
+	if img2 == nil {
+		t.Fatalf("expected non-nil 3x3 chart image")
+	}
+}
+
+func TestRendererChecklistSpotImageWebhooksAndPageSwitch(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		hookHits []string
+	)
+	imgRGBA := image.NewRGBA(image.Rect(0, 0, 32, 24))
+	for y := 0; y < 24; y++ {
+		for x := 0; x < 32; x++ {
+			imgRGBA.SetRGBA(x, y, color.RGBA{R: uint8(x * 7), G: 120, B: 180, A: 255})
+		}
+	}
+	var pngBuf bytes.Buffer
+	_ = png.Encode(&pngBuf, imgRGBA)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/spot":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"hoursToday":[
+					{"hour":0,"priceEur":100,"priceCZK":2500,"level":"low"},
+					{"hour":1,"priceEur":120,"priceCZK":3000,"level":"medium"},
+					{"hour":12,"priceEur":220,"priceCZK":5500,"level":"high"}
+				],
+				"hoursTomorrow":[]
+			}`))
+		case "/img.png":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(pngBuf.Bytes())
+		case "/hook":
+			mu.Lock()
+			hookHits = append(hookHits, r.Method+" "+r.URL.RawQuery)
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		MQTT: config.MQTTConfig{Broker: "tcp://127.0.0.1:1883"},
+		SpotPrice: config.SpotPriceConfig{
+			Enabled:  true,
+			Currency: "CZK",
+		},
+		Device: config.DeviceConfig{
+			Title:    "Test",
+			Width:    600,
+			Height:   800,
+			Language: "cs",
+		},
+		Pages: []config.PageConfig{
+			{
+				ID:      "p_new",
+				Title:   "Novinky",
+				Columns: 2,
+				Rows:    2,
+				Widgets: []config.WidgetConfig{
+					{
+						ID:    "chk_ui",
+						Type:  "checklist",
+						Label: "Nákup",
+						ChecklistItems: []config.ChecklistItem{
+							{ID: "c1", Text: "Rohlíky", Done: false},
+							{ID: "c2", Text: "Máslo", Done: true},
+						},
+					},
+					{
+						ID:    "spot_ui",
+						Type:  "spot_price",
+						Label: "Spot OTE",
+					},
+					{
+						ID:       "img_ui",
+						Type:     "image",
+						Label:    "Radar",
+						ImageURL: srv.URL + "/img.png",
+					},
+					{
+						ID:         "btn_hook",
+						Type:       "button",
+						Label:      "Webhook",
+						WebhookURL: srv.URL + "/hook?s={{state_lower}}",
+					},
+				},
+			},
+			{
+				ID:      "p_second",
+				Title:   "Druhá",
+				Columns: 2,
+				Widgets: []config.WidgetConfig{
+					{
+						ID:         "sw_hook",
+						Type:       "switch",
+						Label:      "Zásuvka",
+						WebhookURL: srv.URL + "/hook?s={{state_lower}}",
+					},
+				},
+			},
+		},
+	}
+	if err := cfg.NormalizeAndValidate(); err != nil {
+		t.Fatalf("NormalizeAndValidate failed: %v", err)
+	}
+
+	mq := mqtt.NewManager(cfg, nil, mqtt.CommandHandler{})
+	chkStore := checklist.NewStore(filepath.Join(t.TempDir(), "chk.json"), nil)
+	chkStore.SyncFromConfig(cfg)
+
+	spotSvc := spot.NewService(cfg.SpotPrice, nil)
+	spotSvc.SetBaseURL(srv.URL + "/spot")
+	spotSvc.SetHTTPClient(srv.Client())
+	spotSvc.FetchNow()
+
+	imgSvc := imgfetch.NewService(cfg, nil)
+	imgSvc.SetHTTPClient(srv.Client())
+	imgSvc.Start()
+	defer imgSvc.Stop()
+
+	// Wait briefly for initial async image fetch
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if g, _, _ := imgSvc.GetRendered("img_ui", 100, 100, "contain", true); g != nil {
+			break
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+
+	r, err := NewRenderer(cfg, mq, &kindle.System{}, Controller{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.SetChecklistStore(chkStore)
+	r.SetSpotService(spotSvc)
+	r.SetImageService(imgSvc)
+	r.httpClient = srv.Client()
+
+	img1, _ := r.Render()
+	maybeSavePreview("ui_new_widgets.png", img1)
+	if img1 == nil {
+		t.Fatal("expected non-nil frame")
+	}
+
+	// Toggle first checklist row via tap
+	tx, ty, ok := findHitCenter(r, ActionChecklistToggle)
+	if !ok || !r.HandleTap(tx, ty) {
+		t.Fatalf("expected checklist toggle tap hit")
+	}
+	if !chkStore.Items("chk_ui")[0].Done {
+		t.Fatalf("expected c1 toggled to Done=true")
+	}
+
+	// Open & close Spot Price detail modal
+	sx, sy, ok := findHitCenter(r, ActionOpenSpotDetail)
+	if !ok || !r.HandleTap(sx, sy) {
+		t.Fatalf("expected spot card tap hit")
+	}
+	imgModal, _ := r.Render()
+	maybeSavePreview("ui_spot_modal.png", imgModal)
+	cx, cy, ok := findHitCenter(r, ActionCloseDetail)
+	if !ok || !r.HandleTap(cx, cy) {
+		t.Fatalf("expected close detail hit inside spot modal")
+	}
+	_, _ = r.Render()
+
+	// Trigger webhook button & switch via TriggerWidget
+	if !r.TriggerWidget("btn_hook", "PRESS") || !r.TriggerWidget("sw_hook", "ON") {
+		t.Fatalf("expected TriggerWidget to trigger webhook button & switch")
+	}
+	time.Sleep(80 * time.Millisecond)
+	mu.Lock()
+	gotHooks := append([]string(nil), hookHits...)
+	mu.Unlock()
+	if len(gotHooks) < 2 {
+		t.Fatalf("expected 2 webhook HTTP hits, got %v", gotHooks)
+	}
+
+	// Switch page via selector ("Druhá", then "1")
+	pid, ptitle, ok := r.SetActivePageBySelector("Druhá")
+	if !ok || pid != "p_second" || ptitle != "Druhá" {
+		t.Fatalf("SetActivePageBySelector('Druhá') failed: ok=%v pid=%q title=%q", ok, pid, ptitle)
+	}
+	pid2, _, ok2 := r.SetActivePageBySelector("1")
+	if !ok2 || pid2 != "p_new" {
+		t.Fatalf("SetActivePageBySelector('1') failed: ok=%v pid=%q", ok2, pid2)
 	}
 }

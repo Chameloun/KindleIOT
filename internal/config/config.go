@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -10,14 +12,117 @@ import (
 
 // Config defines the complete KindleIOT application configuration.
 type Config struct {
-	MQTT      MQTTConfig       `yaml:"mqtt" json:"mqtt"`
-	HomeKit   HomeKitConfig    `yaml:"homekit" json:"homekit"`
-	Weather   WeatherConfig    `yaml:"weather" json:"weather"`
-	Calendar  CalendarConfig   `yaml:"calendar" json:"calendar"`
-	Schedules []ScheduleConfig `yaml:"schedules,omitempty" json:"schedules,omitempty"`
-	Device    DeviceConfig     `yaml:"device" json:"device"`
-	Web       WebConfig        `yaml:"web" json:"web"`
-	Pages     []PageConfig     `yaml:"pages" json:"pages"`
+	MQTT         MQTTConfig         `yaml:"mqtt" json:"mqtt"`
+	HomeKit      HomeKitConfig      `yaml:"homekit" json:"homekit"`
+	Bluetooth    BluetoothConfig    `yaml:"bluetooth,omitempty" json:"bluetooth,omitempty"`
+	BatteryGuard BatteryGuardConfig `yaml:"battery_guard,omitempty" json:"battery_guard,omitempty"`
+	SpotPrice    SpotPriceConfig    `yaml:"spot_price,omitempty" json:"spot_price,omitempty"`
+	Weather      WeatherConfig      `yaml:"weather" json:"weather"`
+	Calendar     CalendarConfig     `yaml:"calendar" json:"calendar"`
+	Schedules    []ScheduleConfig   `yaml:"schedules,omitempty" json:"schedules,omitempty"`
+	Rules        []RuleConfig       `yaml:"rules,omitempty" json:"rules,omitempty"`
+	Device       DeviceConfig       `yaml:"device" json:"device"`
+	Web          WebConfig          `yaml:"web" json:"web"`
+	Pages        []PageConfig       `yaml:"pages" json:"pages"`
+}
+
+// BatteryGuardConfig protects wall-mounted Kindle batteries by controlling a smart charger switch
+// with hysteresis between MinPercent (ON) and MaxPercent (OFF).
+type BatteryGuardConfig struct {
+	Enabled    bool   `yaml:"enabled" json:"enabled"`
+	MinPercent int    `yaml:"min_percent,omitempty" json:"min_percent,omitempty"`
+	MaxPercent int    `yaml:"max_percent,omitempty" json:"max_percent,omitempty"`
+	WidgetID   string `yaml:"widget_id,omitempty" json:"widget_id,omitempty"`
+	BrokerID   string `yaml:"broker_id,omitempty" json:"broker_id,omitempty"`
+	Topic      string `yaml:"topic,omitempty" json:"topic,omitempty"`
+	PayloadOn  string `yaml:"payload_on,omitempty" json:"payload_on,omitempty"`
+	PayloadOff string `yaml:"payload_off,omitempty" json:"payload_off,omitempty"`
+	WebhookOn  string `yaml:"webhook_on,omitempty" json:"webhook_on,omitempty"`
+	WebhookOff string `yaml:"webhook_off,omitempty" json:"webhook_off,omitempty"`
+}
+
+// SpotPriceConfig configures Czech OTE hourly electricity spot price fetching.
+type SpotPriceConfig struct {
+	Enabled         bool     `yaml:"enabled" json:"enabled"`
+	Currency        string   `yaml:"currency,omitempty" json:"currency,omitempty"` // CZK (default), EUR
+	VATPercent      *float64 `yaml:"vat_percent,omitempty" json:"vat_percent,omitempty"`
+	DistributionFee float64  `yaml:"distribution_fee,omitempty" json:"distribution_fee,omitempty"`
+}
+
+// EffectiveVAT returns the configured VAT percentage (defaults to 21% when omitted).
+func (s SpotPriceConfig) EffectiveVAT() float64 {
+	if s.VATPercent == nil {
+		return 21.0
+	}
+	if *s.VATPercent < 0 {
+		return 0
+	}
+	if *s.VATPercent > 50 {
+		return 50
+	}
+	return *s.VATPercent
+}
+
+// RuleConfig defines a local "When -> Then" automation rule evaluated on Kindle.
+type RuleConfig struct {
+	ID            string  `yaml:"id" json:"id"`
+	Name          string  `yaml:"name" json:"name"`
+	Enabled       bool    `yaml:"enabled" json:"enabled"`
+	Trigger       string  `yaml:"trigger" json:"trigger"` // ble_near, ble_away, topic_eq, topic_gt, topic_lt, time
+	DeviceName    string  `yaml:"device_name,omitempty" json:"device_name,omitempty"`
+	BrokerID      string  `yaml:"broker_id,omitempty" json:"broker_id,omitempty"`
+	Topic         string  `yaml:"topic,omitempty" json:"topic,omitempty"`
+	JSONPath      string  `yaml:"json_path,omitempty" json:"json_path,omitempty"`
+	Value         string  `yaml:"value,omitempty" json:"value,omitempty"`
+	Threshold     float64 `yaml:"threshold,omitempty" json:"threshold,omitempty"`
+	Hour          int     `yaml:"hour,omitempty" json:"hour,omitempty"`
+	Minute        int     `yaml:"minute,omitempty" json:"minute,omitempty"`
+	HourFrom      *int    `yaml:"hour_from,omitempty" json:"hour_from,omitempty"`
+	HourTo        *int    `yaml:"hour_to,omitempty" json:"hour_to,omitempty"`
+	Days          []int   `yaml:"days,omitempty" json:"days,omitempty"`
+	CooldownSec   int     `yaml:"cooldown_sec,omitempty" json:"cooldown_sec,omitempty"`
+	ActionType    string  `yaml:"action_type" json:"action_type"` // widget, mqtt, webhook, page, notify, brightness, standby
+	WidgetID      string  `yaml:"widget_id,omitempty" json:"widget_id,omitempty"`
+	State         string  `yaml:"state,omitempty" json:"state,omitempty"`
+	ActionBrokerID string `yaml:"action_broker_id,omitempty" json:"action_broker_id,omitempty"`
+	ActionTopic   string  `yaml:"action_topic,omitempty" json:"action_topic,omitempty"`
+	ActionPayload string  `yaml:"action_payload,omitempty" json:"action_payload,omitempty"`
+	WebhookURL    string  `yaml:"webhook_url,omitempty" json:"webhook_url,omitempty"`
+	WebhookMethod string  `yaml:"webhook_method,omitempty" json:"webhook_method,omitempty"`
+	WebhookBody   string  `yaml:"webhook_body,omitempty" json:"webhook_body,omitempty"`
+	TargetPage    string  `yaml:"target_page,omitempty" json:"target_page,omitempty"`
+	NotifyText    string  `yaml:"notify_text,omitempty" json:"notify_text,omitempty"`
+	Brightness    int     `yaml:"brightness,omitempty" json:"brightness,omitempty"`
+	StandbyActive bool    `yaml:"standby_active,omitempty" json:"standby_active,omitempty"`
+}
+
+// ChecklistItem represents a single checkable note or to-do row.
+type ChecklistItem struct {
+	ID   string `yaml:"id" json:"id"`
+	Text string `yaml:"text" json:"text"`
+	Done bool   `yaml:"done" json:"done"`
+}
+
+// BluetoothConfig configures passive BLE proximity detection (e.g. Apple Watch via IRK or static MAC).
+type BluetoothConfig struct {
+	Enabled          bool              `yaml:"enabled" json:"enabled"`
+	RSSIThreshold    int               `yaml:"rssi_threshold,omitempty" json:"rssi_threshold,omitempty"`
+	AwayTimeoutSec   int               `yaml:"away_timeout_sec,omitempty" json:"away_timeout_sec,omitempty"`
+	WakeStandby      bool              `yaml:"wake_standby" json:"wake_standby"`
+	WakeBacklight    bool              `yaml:"wake_backlight" json:"wake_backlight"`
+	KeepAwake        bool              `yaml:"keep_awake" json:"keep_awake"`
+	PublishMQTT      bool              `yaml:"publish_mqtt,omitempty" json:"publish_mqtt,omitempty"`
+	HomeKitOccupancy bool              `yaml:"homekit_occupancy,omitempty" json:"homekit_occupancy,omitempty"`
+	Devices          []BLEDeviceConfig `yaml:"devices,omitempty" json:"devices,omitempty"`
+}
+
+// BLEDeviceConfig identifies one tracked BLE device by Apple/BLE IRK and/or static MAC address.
+type BLEDeviceConfig struct {
+	ID      string `yaml:"id,omitempty" json:"id,omitempty"`
+	Name    string `yaml:"name" json:"name"`
+	IRK     string `yaml:"irk,omitempty" json:"irk,omitempty"`
+	MAC     string `yaml:"mac,omitempty" json:"mac,omitempty"`
+	Enabled bool   `yaml:"enabled" json:"enabled"`
 }
 
 // CalendarConfig configures iCal (.ics) calendar feed polling.
@@ -177,6 +282,7 @@ type PageConfig struct {
 	Type      string           `yaml:"type,omitempty" json:"type,omitempty"` // grid (default), floorplan
 	Hidden    bool             `yaml:"hidden,omitempty" json:"hidden,omitempty"`
 	Columns   int              `yaml:"columns" json:"columns"`
+	Rows      int              `yaml:"rows,omitempty" json:"rows,omitempty"` // 0 = auto-flow rows, 1..6 = fixed screen grid rows
 	Widgets   []WidgetConfig   `yaml:"widgets" json:"widgets"`
 	Floorplan *FloorplanConfig `yaml:"floorplan,omitempty" json:"floorplan,omitempty"`
 }
@@ -225,24 +331,27 @@ type MacroAction struct {
 
 // WidgetConfig defines a single universal MQTT widget on a page.
 type WidgetConfig struct {
-	ID                string            `yaml:"id" json:"id"`
-	Type              string            `yaml:"type" json:"type"` // switch, button, stepper, sensor, select, gauge, chart, weather, timer, calendar
-	BrokerID          string            `yaml:"broker_id,omitempty" json:"broker_id,omitempty"`
-	Icon              string            `yaml:"icon,omitempty" json:"icon,omitempty"`
-	Label             string            `yaml:"label" json:"label"`
-	Subtitle          string            `yaml:"subtitle,omitempty" json:"subtitle,omitempty"`
-	Span              int               `yaml:"span,omitempty" json:"span,omitempty"`
-	StateTopic        string            `yaml:"state_topic,omitempty" json:"state_topic,omitempty"`
-	StateJSONPath     string            `yaml:"state_json_path,omitempty" json:"state_json_path,omitempty"`
-	CommandTopic      string            `yaml:"command_topic,omitempty" json:"command_topic,omitempty"`
-	Payload           string            `yaml:"payload,omitempty" json:"payload,omitempty"`
-	PayloadOn         string            `yaml:"payload_on,omitempty" json:"payload_on,omitempty"`
-	PayloadOff        string            `yaml:"payload_off,omitempty" json:"payload_off,omitempty"`
-	ValueOn           string            `yaml:"value_on,omitempty" json:"value_on,omitempty"`
-	ValueOff          string            `yaml:"value_off,omitempty" json:"value_off,omitempty"`
-	Confirm           bool              `yaml:"confirm,omitempty" json:"confirm,omitempty"`
-	Min               float64           `yaml:"min,omitempty" json:"min,omitempty"`
-	Max               float64           `yaml:"max,omitempty" json:"max,omitempty"`
+	ID                 string            `yaml:"id" json:"id"`
+	Type               string            `yaml:"type" json:"type"` // switch, button, stepper, sensor, select, gauge, chart, weather, timer, calendar, checklist, spot_price, image
+	BrokerID           string            `yaml:"broker_id,omitempty" json:"broker_id,omitempty"`
+	Icon               string            `yaml:"icon,omitempty" json:"icon,omitempty"`
+	Label              string            `yaml:"label" json:"label"`
+	Subtitle           string            `yaml:"subtitle,omitempty" json:"subtitle,omitempty"`
+	Span               int               `yaml:"span,omitempty" json:"span,omitempty"`
+	RowSpan            int               `yaml:"row_span,omitempty" json:"row_span,omitempty"`
+	GridCol            *int              `yaml:"grid_col,omitempty" json:"grid_col,omitempty"`
+	GridRow            *int              `yaml:"grid_row,omitempty" json:"grid_row,omitempty"`
+	StateTopic         string            `yaml:"state_topic,omitempty" json:"state_topic,omitempty"`
+	StateJSONPath      string            `yaml:"state_json_path,omitempty" json:"state_json_path,omitempty"`
+	CommandTopic       string            `yaml:"command_topic,omitempty" json:"command_topic,omitempty"`
+	Payload            string            `yaml:"payload,omitempty" json:"payload,omitempty"`
+	PayloadOn          string            `yaml:"payload_on,omitempty" json:"payload_on,omitempty"`
+	PayloadOff         string            `yaml:"payload_off,omitempty" json:"payload_off,omitempty"`
+	ValueOn            string            `yaml:"value_on,omitempty" json:"value_on,omitempty"`
+	ValueOff           string            `yaml:"value_off,omitempty" json:"value_off,omitempty"`
+	Confirm            bool              `yaml:"confirm,omitempty" json:"confirm,omitempty"`
+	Min                float64           `yaml:"min,omitempty" json:"min,omitempty"`
+	Max                float64           `yaml:"max,omitempty" json:"max,omitempty"`
 	Step               float64           `yaml:"step,omitempty" json:"step,omitempty"`
 	Precision          *int              `yaml:"precision,omitempty" json:"precision,omitempty"`
 	Unit               string            `yaml:"unit,omitempty" json:"unit,omitempty"`
@@ -252,28 +361,59 @@ type WidgetConfig struct {
 	SecondaryJSONPath  string            `yaml:"secondary_json_path,omitempty" json:"secondary_json_path,omitempty"`
 	SecondaryPrecision *int              `yaml:"secondary_precision,omitempty" json:"secondary_precision,omitempty"`
 	SecondaryUnit      string            `yaml:"secondary_unit,omitempty" json:"secondary_unit,omitempty"`
-	ValueMap          map[string]string `yaml:"value_map,omitempty" json:"value_map,omitempty"`
-	StaleSeconds      int               `yaml:"stale_seconds,omitempty" json:"stale_seconds,omitempty"`
-	Options           []SelectOption    `yaml:"options,omitempty" json:"options,omitempty"`
-	QoS               byte              `yaml:"qos,omitempty" json:"qos,omitempty"`
-	Retain            bool              `yaml:"retain,omitempty" json:"retain,omitempty"`
-	Optimistic        bool              `yaml:"optimistic,omitempty" json:"optimistic,omitempty"`
-	HomeKit           bool              `yaml:"homekit,omitempty" json:"homekit,omitempty"`
-	HomeKitType       string            `yaml:"homekit_type,omitempty" json:"homekit_type,omitempty"` // lightbulb (default), switch, outlet
-	ShowInStandby     bool              `yaml:"show_in_standby,omitempty" json:"show_in_standby,omitempty"`
-	AlertEnabled      bool              `yaml:"alert_enabled,omitempty" json:"alert_enabled,omitempty"`
-	AlertMin          *float64          `yaml:"alert_min,omitempty" json:"alert_min,omitempty"`
-	AlertMax          *float64          `yaml:"alert_max,omitempty" json:"alert_max,omitempty"`
-	PinProtected      bool              `yaml:"pin_protected,omitempty" json:"pin_protected,omitempty"`
-	MacroActions      []MacroAction     `yaml:"macro_actions,omitempty" json:"macro_actions,omitempty"`
-	TargetWidgetID    string            `yaml:"target_widget_id,omitempty" json:"target_widget_id,omitempty"`
-	TargetState       string            `yaml:"target_state,omitempty" json:"target_state,omitempty"`     // OFF (default), ON, TOGGLE
-	TimerPresets      []int             `yaml:"timer_presets,omitempty" json:"timer_presets,omitempty"` // minutes, default [5,15,30]
+	ValueMap           map[string]string `yaml:"value_map,omitempty" json:"value_map,omitempty"`
+	StaleSeconds       int               `yaml:"stale_seconds,omitempty" json:"stale_seconds,omitempty"`
+	Options            []SelectOption    `yaml:"options,omitempty" json:"options,omitempty"`
+	QoS                byte              `yaml:"qos,omitempty" json:"qos,omitempty"`
+	Retain             bool              `yaml:"retain,omitempty" json:"retain,omitempty"`
+	Optimistic         bool              `yaml:"optimistic,omitempty" json:"optimistic,omitempty"`
+	HomeKit            bool              `yaml:"homekit,omitempty" json:"homekit,omitempty"`
+	HomeKitType        string            `yaml:"homekit_type,omitempty" json:"homekit_type,omitempty"` // lightbulb (default), switch, outlet
+	ShowInStandby      bool              `yaml:"show_in_standby,omitempty" json:"show_in_standby,omitempty"`
+	AlertEnabled       bool              `yaml:"alert_enabled,omitempty" json:"alert_enabled,omitempty"`
+	AlertMin           *float64          `yaml:"alert_min,omitempty" json:"alert_min,omitempty"`
+	AlertMax           *float64          `yaml:"alert_max,omitempty" json:"alert_max,omitempty"`
+	PinProtected       bool              `yaml:"pin_protected,omitempty" json:"pin_protected,omitempty"`
+	MacroActions       []MacroAction     `yaml:"macro_actions,omitempty" json:"macro_actions,omitempty"`
+	TargetWidgetID     string            `yaml:"target_widget_id,omitempty" json:"target_widget_id,omitempty"`
+	TargetState        string            `yaml:"target_state,omitempty" json:"target_state,omitempty"`     // OFF (default), ON, TOGGLE
+	TimerPresets       []int             `yaml:"timer_presets,omitempty" json:"timer_presets,omitempty"` // minutes, default [5,15,30]
+	HTTPURL            string            `yaml:"http_url,omitempty" json:"http_url,omitempty"`
+	HTTPIntervalSec    int               `yaml:"http_interval_sec,omitempty" json:"http_interval_sec,omitempty"`
+	HTTPHeaders        map[string]string `yaml:"http_headers,omitempty" json:"http_headers,omitempty"`
+	WebhookURL         string            `yaml:"webhook_url,omitempty" json:"webhook_url,omitempty"`
+	WebhookMethod      string            `yaml:"webhook_method,omitempty" json:"webhook_method,omitempty"`
+	WebhookBody        string            `yaml:"webhook_body,omitempty" json:"webhook_body,omitempty"`
+	WebhookHeaders     map[string]string `yaml:"webhook_headers,omitempty" json:"webhook_headers,omitempty"`
+	WebhookOffURL      string            `yaml:"webhook_off_url,omitempty" json:"webhook_off_url,omitempty"`
+	WebhookOffBody     string            `yaml:"webhook_off_body,omitempty" json:"webhook_off_body,omitempty"`
+	ChecklistItems     []ChecklistItem   `yaml:"checklist_items,omitempty" json:"checklist_items,omitempty"`
+	ChecklistAddTopic  string            `yaml:"checklist_add_topic,omitempty" json:"checklist_add_topic,omitempty"`
+	ImageURL           string            `yaml:"image_url,omitempty" json:"image_url,omitempty"`
+	ImageIntervalSec   int               `yaml:"image_interval_sec,omitempty" json:"image_interval_sec,omitempty"`
+	ImageTriggerTopic  string            `yaml:"image_trigger_topic,omitempty" json:"image_trigger_topic,omitempty"`
+	ImageAuthUser      string            `yaml:"image_auth_user,omitempty" json:"image_auth_user,omitempty"`
+	ImageAuthPass      string            `yaml:"image_auth_pass,omitempty" json:"image_auth_pass,omitempty"`
+	ImageDither        *bool             `yaml:"image_dither,omitempty" json:"image_dither,omitempty"`
+	ImageFit           string            `yaml:"image_fit,omitempty" json:"image_fit,omitempty"` // contain (default), cover
 }
 
 // IntPtr returns a heap-allocated pointer to v for optional integer config fields.
 func IntPtr(v int) *int {
 	return &v
+}
+
+// Float64Ptr returns a heap-allocated pointer to v for optional float64 config fields.
+func Float64Ptr(v float64) *float64 {
+	return &v
+}
+
+// EffectiveImageDither returns true unless image dithering is explicitly disabled.
+func (w WidgetConfig) EffectiveImageDither() bool {
+	if w.ImageDither == nil {
+		return true
+	}
+	return *w.ImageDither
 }
 
 // EffectivePrecision returns the configured decimal precision (0..6) or -1 when omitted (auto).
@@ -290,6 +430,18 @@ func (w WidgetConfig) EffectiveSecondaryPrecision() int {
 		return -1
 	}
 	return clampInt(*w.SecondaryPrecision, 0, 6)
+}
+
+// EffectiveRowSpan returns the clamped row span (>=1) bounded by maxRows (or 6 when maxRows <= 0).
+func (w WidgetConfig) EffectiveRowSpan(maxRows int) int {
+	if w.RowSpan <= 0 {
+		return 1
+	}
+	limit := maxRows
+	if limit <= 0 {
+		limit = 6
+	}
+	return clampInt(w.RowSpan, 1, limit)
 }
 
 // CheckAlert evaluates whether a numeric reading violates the widget's configured alert thresholds.
@@ -321,6 +473,16 @@ func DefaultConfig() *Config {
 			Pin:      "00102003",
 			Port:     51827,
 			StoreDir: "homekit-db",
+		},
+		Bluetooth: BluetoothConfig{
+			Enabled:          false,
+			RSSIThreshold:    -65,
+			AwayTimeoutSec:   30,
+			WakeStandby:      true,
+			WakeBacklight:    true,
+			KeepAwake:        true,
+			PublishMQTT:      true,
+			HomeKitOccupancy: false,
 		},
 		Weather: WeatherConfig{
 			Enabled:      true,
@@ -590,6 +752,45 @@ func (c *Config) NormalizeAndValidate() error {
 	if strings.TrimSpace(c.HomeKit.StoreDir) == "" {
 		c.HomeKit.StoreDir = "homekit-db"
 	}
+	if !c.Bluetooth.Enabled && !c.Bluetooth.WakeStandby && !c.Bluetooth.WakeBacklight && !c.Bluetooth.KeepAwake && len(c.Bluetooth.Devices) == 0 {
+		c.Bluetooth.WakeStandby = true
+		c.Bluetooth.WakeBacklight = true
+		c.Bluetooth.KeepAwake = true
+		c.Bluetooth.PublishMQTT = true
+	}
+	if c.Bluetooth.RSSIThreshold == 0 {
+		c.Bluetooth.RSSIThreshold = -65
+	}
+	c.Bluetooth.RSSIThreshold = clampInt(c.Bluetooth.RSSIThreshold, -100, -20)
+	if c.Bluetooth.AwayTimeoutSec <= 0 {
+		c.Bluetooth.AwayTimeoutSec = 30
+	}
+	c.Bluetooth.AwayTimeoutSec = clampInt(c.Bluetooth.AwayTimeoutSec, 5, 3600)
+	for di := range c.Bluetooth.Devices {
+		dev := &c.Bluetooth.Devices[di]
+		dev.ID = strings.TrimSpace(dev.ID)
+		dev.Name = strings.TrimSpace(dev.Name)
+		dev.IRK = strings.TrimSpace(dev.IRK)
+		dev.MAC = strings.TrimSpace(dev.MAC)
+		if dev.ID == "" {
+			dev.ID = fmt.Sprintf("ble_%d", di+1)
+		}
+		if dev.Name == "" {
+			dev.Name = dev.ID
+		}
+		if dev.IRK != "" {
+			if _, err := DecodeIRK(dev.IRK); err != nil {
+				return fmt.Errorf("bluetooth.devices[%d] (%s): invalid IRK: %w", di, dev.Name, err)
+			}
+		}
+		if dev.MAC != "" {
+			norm, err := NormalizeBLEMAC(dev.MAC)
+			if err != nil {
+				return fmt.Errorf("bluetooth.devices[%d] (%s): invalid MAC: %w", di, dev.Name, err)
+			}
+			dev.MAC = norm
+		}
+	}
 	if strings.TrimSpace(c.Weather.LocationName) == "" {
 		c.Weather.LocationName = "Prague"
 	}
@@ -657,6 +858,90 @@ func (c *Config) NormalizeAndValidate() error {
 			sc.State = "OFF"
 		}
 	}
+
+	// Battery Guard defaults
+	if c.BatteryGuard.MinPercent <= 0 {
+		c.BatteryGuard.MinPercent = 30
+	}
+	c.BatteryGuard.MinPercent = clampInt(c.BatteryGuard.MinPercent, 5, 90)
+	if c.BatteryGuard.MaxPercent <= 0 {
+		c.BatteryGuard.MaxPercent = 80
+	}
+	if c.BatteryGuard.MaxPercent < c.BatteryGuard.MinPercent+5 {
+		c.BatteryGuard.MaxPercent = clampInt(c.BatteryGuard.MinPercent+5, 10, 100)
+	}
+	c.BatteryGuard.MaxPercent = clampInt(c.BatteryGuard.MaxPercent, c.BatteryGuard.MinPercent+5, 100)
+	if strings.TrimSpace(c.BatteryGuard.PayloadOn) == "" {
+		c.BatteryGuard.PayloadOn = "ON"
+	}
+	if strings.TrimSpace(c.BatteryGuard.PayloadOff) == "" {
+		c.BatteryGuard.PayloadOff = "OFF"
+	}
+
+	// Spot Price defaults
+	if strings.EqualFold(strings.TrimSpace(c.SpotPrice.Currency), "EUR") {
+		c.SpotPrice.Currency = "EUR"
+	} else {
+		c.SpotPrice.Currency = "CZK"
+	}
+	if c.SpotPrice.VATPercent != nil {
+		v := *c.SpotPrice.VATPercent
+		if v < 0 {
+			v = 0
+		} else if v > 50 {
+			v = 50
+		}
+		c.SpotPrice.VATPercent = Float64Ptr(v)
+	}
+	if c.SpotPrice.DistributionFee < 0 {
+		c.SpotPrice.DistributionFee = 0
+	} else if c.SpotPrice.DistributionFee > 50 {
+		c.SpotPrice.DistributionFee = 50
+	}
+
+	// Automation rules normalization
+	for ri := range c.Rules {
+		r := &c.Rules[ri]
+		r.ID = strings.TrimSpace(r.ID)
+		if r.ID == "" {
+			r.ID = fmt.Sprintf("rule_%d", ri+1)
+		}
+		r.Name = strings.TrimSpace(r.Name)
+		if r.Name == "" {
+			r.Name = r.ID
+		}
+		r.Trigger = strings.ToLower(strings.TrimSpace(r.Trigger))
+		switch r.Trigger {
+		case "ble_near", "ble_away", "topic_eq", "topic_gt", "topic_lt", "time":
+		default:
+			r.Trigger = "ble_near"
+		}
+		r.Hour = clampInt(r.Hour, 0, 23)
+		r.Minute = clampInt(r.Minute, 0, 59)
+		if r.HourFrom != nil {
+			v := clampInt(*r.HourFrom, 0, 23)
+			r.HourFrom = &v
+		}
+		if r.HourTo != nil {
+			v := clampInt(*r.HourTo, 0, 23)
+			r.HourTo = &v
+		}
+		if r.CooldownSec <= 0 {
+			r.CooldownSec = 10
+		}
+		r.CooldownSec = clampInt(r.CooldownSec, 1, 86400)
+		r.ActionType = strings.ToLower(strings.TrimSpace(r.ActionType))
+		switch r.ActionType {
+		case "widget", "mqtt", "webhook", "page", "notify", "brightness", "standby":
+		default:
+			r.ActionType = "widget"
+		}
+		if strings.TrimSpace(r.State) == "" {
+			r.State = "ON"
+		}
+		r.Brightness = clampInt(r.Brightness, 0, 24)
+	}
+
 	if strings.TrimSpace(c.Device.Title) == "" {
 		c.Device.Title = "KindleIOT"
 	}
@@ -670,7 +955,13 @@ func (c *Config) NormalizeAndValidate() error {
 		if p.Columns <= 0 {
 			p.Columns = 2
 		}
-		p.Columns = clampInt(p.Columns, 1, 3)
+		p.Columns = clampInt(p.Columns, 1, 6)
+		if p.Rows < 0 {
+			p.Rows = 0
+		}
+		if p.Rows > 6 {
+			p.Rows = 6
+		}
 		if p.Type == "" {
 			p.Type = "grid"
 		}
@@ -684,7 +975,7 @@ func (c *Config) NormalizeAndValidate() error {
 			p.Title = p.ID
 		}
 		for wi := range p.Widgets {
-			if err := normalizeWidget(&p.Widgets[wi], p.ID, wi, p.Columns, seenBrokers); err != nil {
+			if err := normalizeWidget(&p.Widgets[wi], p.ID, wi, p.Columns, p.Rows, seenBrokers); err != nil {
 				return err
 			}
 		}
@@ -707,7 +998,7 @@ func (c *Config) NormalizeAndValidate() error {
 				}
 				pin.X = clampInt(pin.X, 0, 1000)
 				pin.Y = clampInt(pin.Y, 0, 1000)
-				if err := normalizeWidget(&pin.Widget, p.ID+"_pin", ki, 2, seenBrokers); err != nil {
+				if err := normalizeWidget(&pin.Widget, p.ID+"_pin", ki, 2, 0, seenBrokers); err != nil {
 					return err
 				}
 			}
@@ -716,7 +1007,7 @@ func (c *Config) NormalizeAndValidate() error {
 	return nil
 }
 
-func normalizeWidget(w *WidgetConfig, prefix string, idx int, maxCols int, knownBrokers map[string]struct{}) error {
+func normalizeWidget(w *WidgetConfig, prefix string, idx int, maxCols, maxRows int, knownBrokers map[string]struct{}) error {
 	if w.ID == "" {
 		w.ID = fmt.Sprintf("%s_w%d", prefix, idx+1)
 	}
@@ -731,6 +1022,24 @@ func normalizeWidget(w *WidgetConfig, prefix string, idx int, maxCols int, known
 	if w.Span > maxCols {
 		w.Span = maxCols
 	}
+	if w.RowSpan < 0 {
+		w.RowSpan = 0
+	}
+	if w.RowSpan > 0 {
+		rowLimit := maxRows
+		if rowLimit <= 0 {
+			rowLimit = 6
+		}
+		w.RowSpan = clampInt(w.RowSpan, 1, rowLimit)
+	}
+	if w.GridCol != nil {
+		c := clampInt(*w.GridCol, 0, maxCols-w.Span)
+		w.GridCol = &c
+	}
+	if w.GridRow != nil && *w.GridRow < 0 {
+		r := 0
+		w.GridRow = &r
+	}
 	if w.QoS > 2 {
 		return fmt.Errorf("widget %q has invalid qos %d", w.ID, w.QoS)
 	}
@@ -741,6 +1050,16 @@ func normalizeWidget(w *WidgetConfig, prefix string, idx int, maxCols int, known
 	if w.SecondaryPrecision != nil {
 		v := clampInt(*w.SecondaryPrecision, 0, 6)
 		w.SecondaryPrecision = &v
+	}
+	w.HTTPURL = strings.TrimSpace(w.HTTPURL)
+	if w.HTTPURL != "" {
+		if w.HTTPIntervalSec <= 0 {
+			w.HTTPIntervalSec = 60
+		}
+		w.HTTPIntervalSec = clampInt(w.HTTPIntervalSec, 5, 86400)
+		if strings.TrimSpace(w.StateTopic) == "" {
+			w.StateTopic = "local/http/" + w.ID
+		}
 	}
 	switch w.Type {
 	case "switch":
@@ -778,8 +1097,24 @@ func normalizeWidget(w *WidgetConfig, prefix string, idx int, maxCols int, known
 		if w.Max == 0 && w.Min == 0 {
 			w.Max = 100
 		}
-	case "sensor", "chart", "weather", "calendar":
+	case "sensor", "chart", "weather", "calendar", "spot_price":
 		// No extra defaults required.
+	case "checklist":
+		for ci := range w.ChecklistItems {
+			if strings.TrimSpace(w.ChecklistItems[ci].ID) == "" {
+				w.ChecklistItems[ci].ID = fmt.Sprintf("item_%d", ci+1)
+			}
+		}
+	case "image":
+		if w.ImageIntervalSec <= 0 {
+			w.ImageIntervalSec = 300
+		}
+		w.ImageIntervalSec = clampInt(w.ImageIntervalSec, 10, 86400)
+		if strings.EqualFold(strings.TrimSpace(w.ImageFit), "cover") {
+			w.ImageFit = "cover"
+		} else {
+			w.ImageFit = "contain"
+		}
 	case "timer":
 		if len(w.TimerPresets) == 0 {
 			w.TimerPresets = []int{5, 15, 30}
@@ -834,12 +1169,21 @@ func (c *Config) SubscribeTopicsByBroker() map[string][]string {
 		for _, w := range p.Widgets {
 			add(w.BrokerID, w.StateTopic)
 			add(w.BrokerID, w.SecondaryTopic)
+			add(w.BrokerID, w.ImageTriggerTopic)
+			add(w.BrokerID, w.ChecklistAddTopic)
 		}
 		if p.Floorplan != nil {
 			for _, pin := range p.Floorplan.Pins {
 				add(pin.Widget.BrokerID, pin.Widget.StateTopic)
 				add(pin.Widget.BrokerID, pin.Widget.SecondaryTopic)
+				add(pin.Widget.BrokerID, pin.Widget.ImageTriggerTopic)
+				add(pin.Widget.BrokerID, pin.Widget.ChecklistAddTopic)
 			}
+		}
+	}
+	for _, r := range c.Rules {
+		if r.Enabled && (r.Trigger == "topic_eq" || r.Trigger == "topic_gt" || r.Trigger == "topic_lt") {
+			add(r.BrokerID, r.Topic)
 		}
 	}
 	return out
@@ -858,4 +1202,70 @@ func (c *Config) AllSubscribeTopics() []string {
 		}
 	}
 	return topics
+}
+
+// DecodeIRK parses a 16-byte BLE Identity Resolving Key from hex (32 hex chars, with optional
+// spaces/colons/hyphens) or Base64 (with or without padding), stripping an optional "irk:" prefix.
+func DecodeIRK(raw string) ([16]byte, error) {
+	var out [16]byte
+	s := strings.TrimSpace(raw)
+	if len(s) >= 4 && strings.EqualFold(s[:4], "irk:") {
+		s = strings.TrimSpace(s[4:])
+	}
+	if s == "" {
+		return out, fmt.Errorf("empty IRK")
+	}
+
+	compact := strings.NewReplacer(" ", "", ":", "", "-", "", "\t", "").Replace(s)
+	if len(compact) == 32 {
+		if b, err := hex.DecodeString(compact); err == nil && len(b) == 16 {
+			copy(out[:], b)
+			return out, nil
+		}
+	}
+
+	if b, err := base64.StdEncoding.DecodeString(s); err == nil {
+		if len(b) != 16 {
+			return out, fmt.Errorf("decoded Base64 IRK length must be 16 bytes (got %d)", len(b))
+		}
+		copy(out[:], b)
+		return out, nil
+	}
+	if b, err := base64.RawStdEncoding.DecodeString(s); err == nil {
+		if len(b) != 16 {
+			return out, fmt.Errorf("decoded Base64 IRK length must be 16 bytes (got %d)", len(b))
+		}
+		copy(out[:], b)
+		return out, nil
+	}
+	return out, fmt.Errorf("expected 16-byte Base64 or 32-char hex string")
+}
+
+// NormalizeBLEMAC validates and normalizes a BLE MAC address to uppercase "AA:BB:CC:DD:EE:FF".
+func NormalizeBLEMAC(raw string) (string, error) {
+	s := strings.ToUpper(strings.TrimSpace(raw))
+	if s == "" {
+		return "", fmt.Errorf("empty MAC address")
+	}
+	s = strings.ReplaceAll(s, "-", ":")
+	if !strings.Contains(s, ":") && len(s) == 12 {
+		b, err := hex.DecodeString(s)
+		if err != nil || len(b) != 6 {
+			return "", fmt.Errorf("invalid hex MAC %q", raw)
+		}
+		return fmt.Sprintf("%02X:%02X:%02X:%02X:%02X:%02X", b[0], b[1], b[2], b[3], b[4], b[5]), nil
+	}
+	parts := strings.Split(s, ":")
+	if len(parts) != 6 {
+		return "", fmt.Errorf("expected 6 octets in MAC %q", raw)
+	}
+	for _, p := range parts {
+		if len(p) != 2 {
+			return "", fmt.Errorf("invalid octet %q in MAC %q", p, raw)
+		}
+		if _, err := hex.DecodeString(p); err != nil {
+			return "", fmt.Errorf("invalid hex octet %q in MAC %q", p, raw)
+		}
+	}
+	return strings.Join(parts, ":"), nil
 }

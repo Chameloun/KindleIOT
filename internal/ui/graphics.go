@@ -330,6 +330,12 @@ func resolveWidgetIcon(wd config.WidgetConfig) string {
 		return "calendar"
 	case "weather":
 		return "sun"
+	case "checklist":
+		return "checklist"
+	case "image":
+		return "image"
+	case "spot_price":
+		return "bolt"
 	default:
 		return "thermometer"
 	}
@@ -436,6 +442,32 @@ func drawIconBadge(img *image.Gray, cx, cy, r int, icon string, invertedCard boo
 		fillRect(img, image.Rect(cx+2, cy+1, cx+5, cy+3), fg)
 		fillRect(img, image.Rect(cx-4, cy+4, cx-1, cy+6), fg)
 		fillRect(img, image.Rect(cx+2, cy+4, cx+5, cy+6), fg)
+
+	case "bluetooth":
+		// Crisp monochrome Bluetooth rune
+		drawThickLine(img, cx, cy-9, cx, cy+9, 2, fg)
+		drawThickLine(img, cx, cy-9, cx+6, cy-4, 2, fg)
+		drawThickLine(img, cx+6, cy-4, cx-5, cy+4, 2, fg)
+		drawThickLine(img, cx, cy+9, cx+6, cy+4, 2, fg)
+		drawThickLine(img, cx+6, cy+4, cx-5, cy-4, 2, fg)
+
+	case "checklist":
+		// Checkmark + lines
+		drawRect(img, image.Rect(cx-8, cy-7, cx-2, cy-1), 1, fg)
+		drawThickLine(img, cx-7, cy-4, cx-5, cy-2, 1, fg)
+		drawThickLine(img, cx-5, cy-2, cx-2, cy-6, 1, fg)
+		drawThickLine(img, cx+1, cy-4, cx+8, cy-4, 2, fg)
+		drawRect(img, image.Rect(cx-8, cy+2, cx-2, cy+8), 1, fg)
+		drawThickLine(img, cx+1, cy+5, cx+8, cy+5, 2, fg)
+
+	case "image":
+		// Picture frame with mountain & sun
+		drawRoundedRect(img, image.Rect(cx-9, cy-7, cx+9, cy+7), 2, 2, fg)
+		fillCircle(img, cx-4, cy-3, 2, fg)
+		drawThickLine(img, cx-7, cy+5, cx-1, cy-1, 2, fg)
+		drawThickLine(img, cx-1, cy-1, cx+2, cy+2, 2, fg)
+		drawThickLine(img, cx+2, cy+2, cx+5, cy-2, 2, fg)
+		drawThickLine(img, cx+5, cy-2, cx+8, cy+5, 2, fg)
 
 	default: // "power"
 		drawArc(img, cx, cy+1, 7, 2, -0.3*math.Pi, 1.3*math.Pi, fg)
