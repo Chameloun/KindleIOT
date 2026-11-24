@@ -149,3 +149,92 @@ func TestImageServiceFetchAuthAndTrigger(t *testing.T) {
 		t.Fatalf("expected at least 2 HTTP fetches after MQTT trigger, got %d", gotHits)
 	}
 }
+
+func TestImageServiceDirectoryIndexPicksLatest(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 16, 16))
+	var pngBuf bytes.Buffer
+	_ = png.Encode(&pngBuf, src)
+
+	var pickedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/radar/":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(`<html><body>
+<a href="pacz2gmaps3.z_max3d.20261124.1155.0.png">old</a>
+<a href="pacz2gmaps3.z_max3d.20261124.1205.0.png">latest</a>
+<a href="pacz2gmaps3.z_max3d.20261124.1200.0.png">mid</a>
+</body></html>`))
+		default:
+			pickedPath = r.URL.Path
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(pngBuf.Bytes())
+		}
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Pages: []config.PageConfig{
+			{
+				ID: "p1",
+				Widgets: []config.WidgetConfig{
+					{ID: "rad1", Type: "image", Label: "Radar", ImageURL: srv.URL + "/radar/"},
+				},
+			},
+		},
+	}
+	svc := NewService(cfg, nil)
+	svc.SetHTTPClient(srv.Client())
+	svc.fetchWidget("rad1")
+
+	if pickedPath != "/radar/pacz2gmaps3.z_max3d.20261124.1205.0.png" {
+		t.Fatalf("expected latest timestamped PNG to be picked, got %q", pickedPath)
+	}
+	img, _, errStr := svc.GetRendered("rad1", 32, 32, "contain", true)
+	if img == nil || errStr != "" {
+		t.Fatalf("expected rendered radar image, img=%v err=%q", img != nil, errStr)
+	}
+}
+
+func TestCHMIRadarCompositesCzechBorder(t *testing.T) {
+	// Transparent 680x460 radar image
+	radar := image.NewRGBA(image.Rect(0, 0, 680, 460))
+	var pngBuf bytes.Buffer
+	_ = png.Encode(&pngBuf, radar)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(pngBuf.Bytes())
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		Pages: []config.PageConfig{
+			{
+				ID: "p1",
+				Widgets: []config.WidgetConfig{
+					{ID: "cz", Type: "image", Label: "Radar", ImageURL: srv.URL + "/pacz2gmaps3.z_max3d.latest.png"},
+				},
+			},
+		},
+	}
+	svc := NewService(cfg, nil)
+	svc.SetHTTPClient(srv.Client())
+	svc.chmiUndTried = true // avoid live network call in unit test
+	svc.fetchWidget("cz")
+
+	gray, _, errStr := svc.GetRendered("cz", 340, 230, "contain", false)
+	if gray == nil || errStr != "" {
+		t.Fatalf("expected rendered CHMI radar, img=%v err=%q", gray != nil, errStr)
+	}
+	// Embedded border must produce dark pixels (<150) even on an empty transparent radar frame!
+	darkCount := 0
+	for _, p := range gray.Pix {
+		if p < 150 {
+			darkCount++
+		}
+	}
+	if darkCount < 50 {
+		t.Fatalf("expected embedded Czech border pixels on composited radar, got only %d dark pixels", darkCount)
+	}
+}

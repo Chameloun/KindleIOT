@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	_ "embed"
 	"fmt"
 	"image"
 	"image/color"
@@ -13,6 +14,9 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +26,74 @@ import (
 	"kindleiot/internal/config"
 	"kindleiot/internal/mqtt"
 )
+
+//go:embed chmi_border.png
+var chmiBorderPNG []byte
+
+const chmiUnderlayURL = "https://produkty.chmi.cz/radar/und/pacz2gmaps9.und3.png"
+
+var (
+	chmiBorderOnce sync.Once
+	chmiBorderImg  image.Image
+)
+
+func loadCHMIBorder() image.Image {
+	chmiBorderOnce.Do(func() {
+		if len(chmiBorderPNG) == 0 {
+			return
+		}
+		img, _, err := image.Decode(bytes.NewReader(chmiBorderPNG))
+		if err != nil {
+			return
+		}
+		// Pre-pool 2720x1840 (4x resolution) down to crisp 680x460 1px dark lines so thin borders
+		// are never washed out by bilinear downsampling on e-ink.
+		b := img.Bounds()
+		if b.Dx() >= 1360 && b.Dy() >= 920 {
+			stepX := maxInt(1, b.Dx()/680)
+			stepY := maxInt(1, b.Dy()/460)
+			dw := b.Dx() / stepX
+			dh := b.Dy() / stepY
+			pooled := image.NewRGBA(image.Rect(0, 0, dw, dh))
+			for y := 0; y < dh; y++ {
+				for x := 0; x < dw; x++ {
+					var bestA uint32
+					var bestY uint32 = 255
+					for sy := 0; sy < stepY; sy++ {
+						for sx := 0; sx < stepX; sx++ {
+							r, g, bl, a := img.At(b.Min.X+x*stepX+sx, b.Min.Y+y*stepY+sy).RGBA()
+							if a > 0x4000 {
+								lum := (299*r + 587*g + 114*bl) / 1000 >> 8
+								if a > bestA {
+									bestA = a
+								}
+								if lum < bestY {
+									bestY = lum
+								}
+							}
+						}
+					}
+					if bestA > 0x4000 {
+						// Make Czech borders crisp dark gray/black for high contrast on e-ink
+						v := uint8(minInt(60, int(bestY)))
+						pooled.SetRGBA(x, y, color.RGBA{R: v, G: v, B: v, A: 255})
+					}
+				}
+			}
+			chmiBorderImg = pooled
+			return
+		}
+		chmiBorderImg = img
+	})
+	return chmiBorderImg
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
 
 type cachedEntry struct {
 	widget        config.WidgetConfig
@@ -46,6 +118,8 @@ type Service struct {
 	primaryBroker string
 	client        *http.Client
 	entries       map[string]*cachedEntry
+	chmiUnderlay  image.Image
+	chmiUndTried  bool
 	onUpdate      func()
 	stopCh        chan struct{}
 }
@@ -324,12 +398,49 @@ func (s *Service) fetchWidget(widgetID string) {
 		s.setWidgetError(widgetID, err.Error(), cb)
 		return
 	}
+	resolvedURL := urlStr
+	ct := strings.ToLower(resp.Header.Get("Content-Type"))
+	if strings.Contains(ct, "text/html") || bytes.HasPrefix(bytes.TrimSpace(raw), []byte("<")) {
+		var rerr error
+		resolvedURL, rerr = resolveDirectoryIndexImage(resp.Request.URL, raw)
+		if rerr != nil {
+			s.setWidgetError(widgetID, rerr.Error(), cb)
+			return
+		}
+		req2, err := http.NewRequestWithContext(ctx, http.MethodGet, resolvedURL, nil)
+		if err != nil {
+			s.setWidgetError(widgetID, err.Error(), cb)
+			return
+		}
+		req2.Header.Set("User-Agent", "KindleIOT/1.0")
+		if w.ImageAuthUser != "" || w.ImageAuthPass != "" {
+			req2.SetBasicAuth(w.ImageAuthUser, w.ImageAuthPass)
+		}
+		resp2, err := client.Do(req2)
+		if err != nil {
+			s.setWidgetError(widgetID, err.Error(), cb)
+			return
+		}
+		defer resp2.Body.Close()
+		if resp2.StatusCode != http.StatusOK {
+			s.setWidgetError(widgetID, fmt.Sprintf("HTTP %d", resp2.StatusCode), cb)
+			return
+		}
+		raw, err = io.ReadAll(io.LimitReader(resp2.Body, 8<<20))
+		if err != nil {
+			s.setWidgetError(widgetID, err.Error(), cb)
+			return
+		}
+	}
 	decoded, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
 		s.setWidgetError(widgetID, "decode: "+err.Error(), cb)
 		return
 	}
 	decoded = downscaleCap(decoded, 800)
+	if isCHMIRadarURL(urlStr, resolvedURL) {
+		decoded = s.composeCHMIRadar(ctx, client, decoded)
+	}
 
 	s.mu.Lock()
 	if cur, exists := s.entries[widgetID]; exists {
@@ -546,4 +657,108 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+var imgHrefRe = regexp.MustCompile(`(?i)href=["']([^"']+\.(?:png|jpe?g|gif))(?:\?[^"']*)?["']`)
+
+// resolveDirectoryIndexImage parses an HTTP directory listing (such as opendata.chmi.cz)
+// and returns the absolute URL of the latest (lexicographically last) image file.
+func resolveDirectoryIndexImage(base *url.URL, html []byte) (string, error) {
+	matches := imgHrefRe.FindAllSubmatch(html, -1)
+	if len(matches) == 0 {
+		return "", fmt.Errorf("no image links found in directory index")
+	}
+	links := make([]string, 0, len(matches))
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		href := strings.TrimSpace(string(m[1]))
+		if href == "" || strings.HasPrefix(href, "../") {
+			continue
+		}
+		links = append(links, href)
+	}
+	if len(links) == 0 {
+		return "", fmt.Errorf("no image links found in directory index")
+	}
+	sort.Strings(links)
+	latest := links[len(links)-1]
+	if base == nil {
+		return latest, nil
+	}
+	ref, err := url.Parse(latest)
+	if err != nil {
+		return "", err
+	}
+	return base.ResolveReference(ref).String(), nil
+}
+
+func isCHMIRadarURL(origURL, resolvedURL string) bool {
+	u := strings.ToLower(origURL + " " + resolvedURL)
+	return strings.Contains(u, "opendata.chmi.cz") || strings.Contains(u, "pacz2gmaps")
+}
+
+func (s *Service) getCHMIUnderlay(ctx context.Context, client *http.Client) image.Image {
+	s.mu.RLock()
+	tried := s.chmiUndTried
+	cached := s.chmiUnderlay
+	s.mu.RUnlock()
+	if tried {
+		return cached
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, chmiUnderlayURL, nil)
+	var decoded image.Image
+	if err == nil && client != nil {
+		req.Header.Set("User-Agent", "KindleIOT/1.0")
+		if resp, derr := client.Do(req); derr == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				if raw, rerr := io.ReadAll(io.LimitReader(resp.Body, 2<<20)); rerr == nil {
+					if img, _, ierr := image.Decode(bytes.NewReader(raw)); ierr == nil {
+						decoded = img
+					}
+				}
+			}
+		}
+	}
+
+	s.mu.Lock()
+	s.chmiUndTried = true
+	if decoded != nil {
+		s.chmiUnderlay = decoded
+	}
+	out := s.chmiUnderlay
+	s.mu.Unlock()
+	return out
+}
+
+// composeCHMIRadar composites the Czech Republic districts/cities underlay and official crisp border
+// beneath/above the transparent ČHMÚ radar precipitation overlay so cloud positions are easy to read.
+func (s *Service) composeCHMIRadar(ctx context.Context, client *http.Client, radar image.Image) image.Image {
+	b := radar.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w <= 0 || h <= 0 {
+		return radar
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	xdraw.Draw(dst, dst.Bounds(), &image.Uniform{C: color.RGBA{R: 255, G: 255, B: 255, A: 255}}, image.Point{}, xdraw.Src)
+
+	if und := s.getCHMIUnderlay(ctx, client); und != nil {
+		xdraw.BiLinear.Scale(dst, dst.Bounds(), und, und.Bounds(), xdraw.Over, nil)
+		// Soften underlay slightly toward white so radar clouds stay high-contrast on e-ink
+		for i := 0; i < len(dst.Pix); i += 4 {
+			dst.Pix[i] = uint8((int(dst.Pix[i]) + 255) / 2)
+			dst.Pix[i+1] = uint8((int(dst.Pix[i+1]) + 255) / 2)
+			dst.Pix[i+2] = uint8((int(dst.Pix[i+2]) + 255) / 2)
+		}
+	}
+
+	xdraw.Draw(dst, dst.Bounds(), radar, b.Min, xdraw.Over)
+
+	if border := loadCHMIBorder(); border != nil {
+		xdraw.NearestNeighbor.Scale(dst, dst.Bounds(), border, border.Bounds(), xdraw.Over, nil)
+	}
+	return dst
 }

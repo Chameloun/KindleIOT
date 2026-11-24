@@ -1729,7 +1729,7 @@
           icon: 'image',
           span: 2,
           row_span: 2,
-          image_url: 'https://www.chmi.cz/files/portal/docs/meteo/rad/inca-cz/data/czrad-z_max3d/pacz2gmaps3.z_max3d.latest.png',
+          image_url: 'https://opendata.chmi.cz/meteorology/weather/radar/composite/maxz/png/',
           image_interval_sec: 300,
           image_fit: 'contain',
           image_dither: true
@@ -3244,7 +3244,7 @@
       } else if (w.type === 'image') {
         const ditherOn = w.image_dither !== false;
         window._setImgRadar = () => {
-          w.image_url = 'https://www.chmi.cz/files/portal/docs/meteo/rad/inca-cz/data/czrad-z_max3d/pacz2gmaps3.z_max3d.latest.png';
+          w.image_url = 'https://opendata.chmi.cz/meteorology/weather/radar/composite/maxz/png/';
           markDirty(true);
           renderDesigner();
         };
